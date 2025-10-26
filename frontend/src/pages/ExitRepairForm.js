@@ -3,11 +3,9 @@ import DatePicker from 'react-multi-date-picker';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
 import { createExitForm, createRepairForm, getUnits, getRecentForms } from '../api';
-import { useAuth } from '../AuthContext';
 import { toPersianNumber, formatJalaliDate, generateFormNumber, validateItemsCount, validateItem } from '../utils';
 
 const ExitRepairForm = () => {
-  const { user } = useAuth();
   const [units, setUnits] = useState([]);
   const [showRepairForm, setShowRepairForm] = useState(false);
   const [lastExitFormNo, setLastExitFormNo] = useState('');
@@ -38,6 +36,7 @@ const ExitRepairForm = () => {
   useEffect(() => {
     loadUnits();
     loadRecentForms();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadUnits = async () => {
