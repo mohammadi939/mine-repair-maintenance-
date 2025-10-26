@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Vazirmatn';
+  src: local('Vazirmatn'), url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/fonts/webfonts/Vazirmatn-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+* {
+  font-family: 'Vazirmatn', sans-serif;
+}
+
+body {
+  margin: 0;
+  direction: rtl;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Persian number input */
+input[type="number"] {
+  text-align: right;
+}
+
+/* Date picker RTL support */
+.rmdp-container {
+  direction: rtl;
+}
+
+/* Status badges */
+.status-badge {
+  @apply px-3 py-1 rounded-full text-sm font-medium inline-flex items-center;
+}
+
+.status-sending {
+  @apply bg-blue-100 text-blue-800;
+}
+
+.status-repairing {
+  @apply bg-orange-100 text-orange-800;
+}
+
+.status-repaired {
+  @apply bg-green-100 text-green-800;
+}
+
+.status-delivered {
+  @apply bg-purple-100 text-purple-800;
+}
+
+.status-unknown {
+  @apply bg-gray-100 text-gray-800;
+}
