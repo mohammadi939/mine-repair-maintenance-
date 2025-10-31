@@ -77,6 +77,14 @@ if ($zip->open($zipFileWithExtension, ZipArchive::CREATE | ZipArchive::OVERWRITE
 }
 
 $skipNames = ['.git', 'node_modules', 'vendor'];
+$skipPatterns = [
+    '#^\\.env.*$#i',
+    '#^backend/\\.env.*$#i',
+    '#^backend/.*\\.(db|sqlite3?|db-journal|sqlite-journal)$#i',
+    '#^backend/(storage|logs|cache|sessions)(/|$)#i',
+    '#^backend/.*\\.(log|tmp)$#i',
+    '#^uploads/(?!\\.gitkeep$).+#i',
+];
 
 foreach ($pathsToInclude as $relativePath) {
     $absolutePath = $rootPath . DIRECTORY_SEPARATOR . $relativePath;
@@ -85,7 +93,7 @@ foreach ($pathsToInclude as $relativePath) {
     }
 
     if (is_dir($absolutePath)) {
-        addDirectoryToZip($zip, $absolutePath, $relativePath, $skipNames);
+        addDirectoryToZip($zip, $absolutePath, $relativePath, $skipNames, $skipPatterns);
     } else {
         $zip->addFile($absolutePath, $relativePath);
     }
@@ -135,8 +143,28 @@ fclose($handle);
 @unlink($zipFileWithExtension);
 exit;
 
-function addDirectoryToZip(ZipArchive $zip, string $directoryPath, string $baseName, array $skipNames): void
+function shouldSkipPath(string $localName, array $skipPatterns): bool
 {
+    foreach ($skipPatterns as $pattern) {
+        if (preg_match($pattern, $localName) === 1) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function addDirectoryToZip(
+    ZipArchive $zip,
+    string $directoryPath,
+    string $baseName,
+    array $skipNames,
+    array $skipPatterns
+): void {
+    if (shouldSkipPath($baseName . '/', $skipPatterns)) {
+        return;
+    }
+
     $zip->addEmptyDir($baseName);
 
     $iterator = new RecursiveIteratorIterator(
@@ -153,18 +181,28 @@ function addDirectoryToZip(ZipArchive $zip, string $directoryPath, string $baseN
             continue;
         }
 
-        $segments = explode('/', str_replace('\\', '/', $subPath));
+        $normalizedSubPath = str_replace('\\', '/', $subPath);
+        $segments = explode('/', $normalizedSubPath);
         foreach ($segments as $segment) {
             if (in_array($segment, $skipNames, true)) {
                 continue 2;
             }
         }
 
-        $localName = $baseName . '/' . str_replace('\\', '/', $subPath);
+        $localName = $baseName . '/' . $normalizedSubPath;
 
         if ($fileInfo->isDir()) {
+            $dirName = rtrim($localName, '/') . '/';
+            if (shouldSkipPath($dirName, $skipPatterns)) {
+                $iterator->skipChildren();
+                continue;
+            }
+
             $zip->addEmptyDir($localName);
-        } elseif ($fileInfo->isFile()) {
+            continue;
+        }
+
+        if ($fileInfo->isFile() && !shouldSkipPath($localName, $skipPatterns)) {
             $zip->addFile($fileInfo->getPathname(), $localName);
         }
     }
