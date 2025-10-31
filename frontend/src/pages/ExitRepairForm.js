@@ -4,6 +4,7 @@ import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
 import { createExitForm, createRepairForm, getUnits, getRecentForms } from '../api';
 import { toPersianNumber, formatJalaliDate, generateFormNumber, validateItemsCount, validateItem } from '../utils';
+import AttachmentManager from '../components/AttachmentManager';
 
 const ExitRepairForm = () => {
   const [units, setUnits] = useState([]);
@@ -11,6 +12,25 @@ const ExitRepairForm = () => {
   const [lastExitFormNo, setLastExitFormNo] = useState('');
   const [recentForms, setRecentForms] = useState([]);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [attachmentTargets, setAttachmentTargets] = useState([]);
+
+  const addAttachmentTarget = (target) => {
+    setAttachmentTargets((prev) => {
+      const exists = prev.some(
+        (item) => item.entityType === target.entityType && item.entityId === target.entityId,
+      );
+      if (exists) {
+        return prev;
+      }
+      return [...prev, target];
+    });
+  };
+
+  const removeAttachmentTarget = (entityType, entityId) => {
+    setAttachmentTargets((prev) =>
+      prev.filter((item) => !(item.entityType === entityType && item.entityId === entityId)),
+    );
+  };
 
   // Exit form state
   const [exitForm, setExitForm] = useState({
@@ -127,6 +147,11 @@ const ExitRepairForm = () => {
         unit_id: exitForm.unit_id,
       }));
       loadRecentForms();
+      addAttachmentTarget({
+        entityType: 'exit_form',
+        entityId: response.id,
+        title: `پیوست‌های فرم خروج ${toPersianNumber(response.form_no)}`,
+      });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'خطا در ثبت فرم خروج' });
     }
@@ -181,7 +206,7 @@ const ExitRepairForm = () => {
         date_shamsi: formatJalaliDate(repairForm.date_shamsi),
       };
 
-      await createRepairForm(data);
+      const response = await createRepairForm(data);
       setMessage({ type: 'success', text: 'فرم تعمیر با موفقیت ثبت شد' });
       
       // Reset forms
@@ -204,6 +229,11 @@ const ExitRepairForm = () => {
       });
       setShowRepairForm(false);
       loadRecentForms();
+      addAttachmentTarget({
+        entityType: 'repair_form',
+        entityId: response.id,
+        title: `پیوست‌های فرم تعمیر ${toPersianNumber(response.form_no)}`,
+      });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'خطا در ثبت فرم تعمیر' });
     }
@@ -620,6 +650,38 @@ const ExitRepairForm = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {attachmentTargets.length > 0 && (
+        <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">پیوست فرم‌های ثبت‌شده</h3>
+              <p className="text-sm text-gray-600">
+                فایل‌های مرتبط با فرم‌های اخیر را بارگذاری کنید تا تیم‌های مجاز بتوانند آن‌ها را مشاهده کنند.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAttachmentTargets([])}
+              className="text-sm text-red-600 hover:text-red-700"
+            >
+              پاکسازی لیست
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {attachmentTargets.map((target) => (
+              <AttachmentManager
+                key={`${target.entityType}-${target.entityId}`}
+                entityType={target.entityType}
+                entityId={target.entityId}
+                title={target.title}
+                onRemove={() => removeAttachmentTarget(target.entityType, target.entityId)}
+              />
+            ))}
           </div>
         </div>
       )}

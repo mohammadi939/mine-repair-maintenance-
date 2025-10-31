@@ -78,6 +78,73 @@ function canAccessUnit($user, $unitId) {
     return false;
 }
 
+function resolveEntityUnit($db, $entityType, $entityId) {
+    switch ($entityType) {
+        case 'exit_form':
+            $stmt = $db->prepare("SELECT unit_id FROM exit_forms WHERE id = ?");
+            $stmt->execute([$entityId]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                sendError('فرم خروج مورد نظر یافت نشد', 404);
+            }
+            return $row['unit_id'] ?? null;
+        case 'repair_form':
+            $stmt = $db->prepare(<<<SQL
+                SELECT
+                    rf.unit_id,
+                    ef.unit_id AS reference_exit_unit_id
+                FROM repair_forms rf
+                LEFT JOIN exit_forms ef ON ef.id = rf.reference_exit_form_id
+                WHERE rf.id = ?
+            SQL);
+            $stmt->execute([$entityId]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                sendError('فرم تعمیر مورد نظر یافت نشد', 404);
+            }
+            if ($row && array_key_exists('unit_id', $row) && $row['unit_id'] !== null) {
+                return $row['unit_id'];
+            }
+            return $row['reference_exit_unit_id'] ?? null;
+        case 'entry_confirm':
+            $stmt = $db->prepare(<<<SQL
+                SELECT
+                    ec.reference_exit_form_id,
+                    ec.reference_repair_form_id,
+                    direct_exit.unit_id AS direct_exit_unit_id,
+                    rf.unit_id AS repair_unit_id,
+                    repair_exit.unit_id AS repair_exit_unit_id
+                FROM entry_confirms ec
+                LEFT JOIN exit_forms direct_exit ON direct_exit.id = ec.reference_exit_form_id
+                LEFT JOIN repair_forms rf ON rf.id = ec.reference_repair_form_id
+                LEFT JOIN exit_forms repair_exit ON repair_exit.id = rf.reference_exit_form_id
+                WHERE ec.id = ?
+            SQL);
+            $stmt->execute([$entityId]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                sendError('تأییدیه ورود مورد نظر یافت نشد', 404);
+            }
+            if ($row && array_key_exists('direct_exit_unit_id', $row) && $row['direct_exit_unit_id'] !== null) {
+                return $row['direct_exit_unit_id'];
+            }
+            if ($row && array_key_exists('repair_unit_id', $row) && $row['repair_unit_id'] !== null) {
+                return $row['repair_unit_id'];
+            }
+            return $row['repair_exit_unit_id'] ?? null;
+        case 'equipment':
+            $stmt = $db->prepare("SELECT unit_id FROM equipment WHERE id = ?");
+            $stmt->execute([$entityId]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                sendError('تجهیز مورد نظر یافت نشد', 404);
+            }
+            return $row['unit_id'] ?? null;
+        default:
+            return null;
+    }
+}
+
 // Get action from query string
 $action = $_GET['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
@@ -501,7 +568,7 @@ try {
     if ($action === 'get_form_details' && $method === 'GET') {
         $type = $_GET['type'] ?? '';
         $id = $_GET['id'] ?? '';
-        
+
         if (!$type || !$id) {
             sendError('نوع و شناسه فرم الزامی است');
         }
@@ -557,6 +624,41 @@ try {
         } else {
             sendError('نوع فرم نامعتبر است');
         }
+    }
+
+    if ($action === 'get_attachments' && $method === 'GET') {
+        $entityType = $_GET['entity_type'] ?? '';
+        $entityId = $_GET['entity_id'] ?? '';
+
+        if (!$entityType || !$entityId) {
+            sendError('نوع و شناسه موجودیت الزامی است');
+        }
+
+        if (!ctype_digit((string) $entityId)) {
+            sendError('شناسه موجودیت نامعتبر است');
+        }
+
+        $entityId = (int) $entityId;
+
+        $allowedTypes = ['exit_form', 'repair_form', 'entry_confirm', 'equipment'];
+        if (!in_array($entityType, $allowedTypes, true)) {
+            sendError('نوع موجودیت نامعتبر است');
+        }
+
+        $unitId = resolveEntityUnit($db, $entityType, $entityId);
+        if (!canAccessUnit($user, $unitId)) {
+            sendError('دسترسی به این موجودیت ندارید', 403);
+        }
+
+        $stmt = $db->prepare(
+            "SELECT id, file_path, file_name, created_at\n"
+            . "FROM attachments\n"
+            . "WHERE entity_type = ? AND entity_id = ?\n"
+            . "ORDER BY created_at DESC, id DESC"
+        );
+        $stmt->execute([$entityType, $entityId]);
+
+        sendJson($stmt->fetchAll());
     }
     
     // Get recent forms

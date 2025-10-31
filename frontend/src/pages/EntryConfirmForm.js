@@ -4,6 +4,7 @@ import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
 import { searchForms, getFormDetails, createEntryConfirm } from '../api';
 import { toPersianNumber, formatJalaliDate, generateFormNumber, validateItemsCount, validateItem } from '../utils';
+import AttachmentManager from '../components/AttachmentManager';
 
 const EntryConfirmForm = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -11,6 +12,25 @@ const EntryConfirmForm = () => {
   const [selectedForm, setSelectedForm] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [attachmentTargets, setAttachmentTargets] = useState([]);
+
+  const addAttachmentTarget = (target) => {
+    setAttachmentTargets((prev) => {
+      const exists = prev.some(
+        (item) => item.entityType === target.entityType && item.entityId === target.entityId,
+      );
+      if (exists) {
+        return prev;
+      }
+      return [...prev, target];
+    });
+  };
+
+  const removeAttachmentTarget = (entityType, entityId) => {
+    setAttachmentTargets((prev) =>
+      prev.filter((item) => !(item.entityType === entityType && item.entityId === entityId)),
+    );
+  };
 
   const [entryForm, setEntryForm] = useState({
     confirm_no: generateFormNumber('ENTRY'),
@@ -118,7 +138,7 @@ const EntryConfirmForm = () => {
         purchase_date_shamsi: entryForm.purchase_date_shamsi ? formatJalaliDate(entryForm.purchase_date_shamsi) : null,
       };
 
-      await createEntryConfirm(data);
+      const response = await createEntryConfirm(data);
       setMessage({ type: 'success', text: 'تأیید ورود با موفقیت ثبت شد' });
       
       // Reset form
@@ -134,6 +154,11 @@ const EntryConfirmForm = () => {
         items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
       });
       setSelectedForm(null);
+      addAttachmentTarget({
+        entityType: 'entry_confirm',
+        entityId: response.id,
+        title: `پیوست‌های تأیید ورود ${toPersianNumber(response.confirm_no)}`,
+      });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'خطا در ثبت تأیید ورود' });
     }
@@ -460,6 +485,38 @@ const EntryConfirmForm = () => {
           </div>
         </form>
       </div>
+
+      {attachmentTargets.length > 0 && (
+        <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">پیوست تأییدیه‌های ثبت‌شده</h3>
+              <p className="text-sm text-gray-600">
+                برای تکمیل مستندات، فایل‌های مربوط به تأیید ورود را بارگذاری و مدیریت کنید.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAttachmentTargets([])}
+              className="text-sm text-red-600 hover:text-red-700"
+            >
+              پاکسازی لیست
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {attachmentTargets.map((target) => (
+              <AttachmentManager
+                key={`${target.entityType}-${target.entityId}`}
+                entityType={target.entityType}
+                entityId={target.entityId}
+                title={target.title}
+                onRemove={() => removeAttachmentTarget(target.entityType, target.entityId)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

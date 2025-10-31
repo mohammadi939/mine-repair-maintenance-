@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000';
+export const API_BASE_URL = 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -88,12 +88,21 @@ export const uploadFile = async (entityType, entityId, file) => {
   formData.append('file', file);
   formData.append('entity_type', entityType);
   formData.append('entity_id', entityId);
-  
+
   const response = await api.post('/upload.php', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
   });
+  return response.data;
+};
+
+export const getAttachments = async (entityType, entityId) => {
+  const response = await api.get(
+    `/api.php?action=get_attachments&entity_type=${encodeURIComponent(entityType)}&entity_id=${encodeURIComponent(
+      entityId,
+    )}`,
+  );
   return response.data;
 };
 
