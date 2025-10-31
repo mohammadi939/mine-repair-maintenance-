@@ -109,7 +109,7 @@ https://github.com/mohammadi939/mine-repair-maintenance-
 - Password: `admin123`
 ```
 
-7. فایل ZIP را attach کنید: `CMMS-Mine-Maintenance-System.zip`
+7. ابتدا از طریق اندپوینت `download_zip.php` یا دستور `zip -r` یک فایل `CMMS-Mine-Maintenance-System.zip` تازه بسازید و همان را attach کنید
 8. کلیک کنید روی **Publish release**
 
 ---

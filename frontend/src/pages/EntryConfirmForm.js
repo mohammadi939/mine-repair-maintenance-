@@ -2,8 +2,16 @@ import React, { useState } from 'react';
 import DatePicker from 'react-multi-date-picker';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
-import { searchForms, getFormDetails, createEntryConfirm } from '../api';
-import { toPersianNumber, formatJalaliDate, generateFormNumber, validateItemsCount, validateItem } from '../utils';
+import { searchForms, getFormDetails, createEntryConfirm, uploadFile } from '../api';
+import {
+  toPersianNumber,
+  formatJalaliDate,
+  generateFormNumber,
+  validateItemsCount,
+  validateItem,
+  toEnglishNumber,
+  getStatusClass,
+} from '../utils';
 
 const EntryConfirmForm = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -11,6 +19,8 @@ const EntryConfirmForm = () => {
   const [selectedForm, setSelectedForm] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [entryUploads, setEntryUploads] = useState({ formScan: null, equipmentImage: null });
+  const [entryFileKey, setEntryFileKey] = useState(0);
 
   const [entryForm, setEntryForm] = useState({
     confirm_no: generateFormNumber('ENTRY'),
@@ -24,6 +34,44 @@ const EntryConfirmForm = () => {
     items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
   });
 
+  const getMessageClasses = (type) => {
+    switch (type) {
+      case 'success':
+        return 'bg-green-50 border border-green-200 text-green-800';
+      case 'warning':
+        return 'bg-yellow-50 border border-yellow-200 text-yellow-800';
+      default:
+        return 'bg-red-50 border border-red-200 text-red-800';
+    }
+  };
+
+  const handleFileChange = (field) => (event) => {
+    const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+    setEntryUploads((prev) => ({ ...prev, [field]: file }));
+  };
+
+  const resetEntryAttachments = () => {
+    setEntryUploads({ formScan: null, equipmentImage: null });
+    setEntryFileKey((prev) => prev + 1);
+  };
+
+  const uploadAttachments = async (entityId) => {
+    const files = Object.values(entryUploads).filter(Boolean);
+    if (files.length === 0) {
+      return { success: true };
+    }
+
+    try {
+      for (const file of files) {
+        await uploadFile('entry_confirm', entityId, file);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('Attachment upload error:', error);
+      return { success: false };
+    }
+  };
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
       setMessage({ type: 'error', text: 'لطفاً شماره فرم را وارد کنید' });
@@ -33,7 +81,8 @@ const EntryConfirmForm = () => {
     setLoading(true);
     setMessage({ type: '', text: '' });
     try {
-      const results = await searchForms(searchQuery);
+      const normalizedQuery = toEnglishNumber(searchQuery.trim());
+      const results = await searchForms(normalizedQuery);
       setSearchResults(results);
       if (results.length === 0) {
         setMessage({ type: 'error', text: 'هیچ فرمی یافت نشد' });
@@ -57,9 +106,10 @@ const EntryConfirmForm = () => {
         reference_exit_form_no: form.type === 'exit' ? form.number : details.reference_exit_form_no || '',
         reference_repair_form_no: form.type === 'repair' ? form.number : '',
       }));
-      
+
       setSearchResults([]);
       setSearchQuery('');
+      resetEntryAttachments();
     } catch (err) {
       setMessage({ type: 'error', text: 'خطا در بارگذاری جزئیات فرم' });
     } finally {
@@ -68,7 +118,16 @@ const EntryConfirmForm = () => {
   };
 
   const handleFormChange = (field, value) => {
-    setEntryForm((prev) => ({ ...prev, [field]: value }));
+    let processedValue = value;
+    if (
+      field === 'confirm_no' ||
+      field === 'reference_exit_form_no' ||
+      field === 'reference_repair_form_no' ||
+      field === 'purchase_request_code'
+    ) {
+      processedValue = toEnglishNumber(value);
+    }
+    setEntryForm((prev) => ({ ...prev, [field]: processedValue }));
   };
 
   const handleItemChange = (index, field, value) => {
@@ -118,9 +177,15 @@ const EntryConfirmForm = () => {
         purchase_date_shamsi: entryForm.purchase_date_shamsi ? formatJalaliDate(entryForm.purchase_date_shamsi) : null,
       };
 
-      await createEntryConfirm(data);
-      setMessage({ type: 'success', text: 'تأیید ورود با موفقیت ثبت شد' });
-      
+      const response = await createEntryConfirm(data);
+      const attachmentsResult = await uploadAttachments(response.id);
+      setMessage({
+        type: attachmentsResult.success ? 'success' : 'warning',
+        text: attachmentsResult.success
+          ? 'تأیید ورود با موفقیت ثبت شد'
+          : 'تأیید ورود ثبت شد اما آپلود فایل با خطا مواجه شد',
+      });
+
       // Reset form
       setEntryForm({
         confirm_no: generateFormNumber('ENTRY'),
@@ -134,6 +199,7 @@ const EntryConfirmForm = () => {
         items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
       });
       setSelectedForm(null);
+      resetEntryAttachments();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'خطا در ثبت تأیید ورود' });
     }
@@ -147,13 +213,7 @@ const EntryConfirmForm = () => {
         <h2 className="text-2xl font-bold text-gray-900 mb-6">ثبت تأیید ورود</h2>
 
         {message.text && (
-          <div
-            className={`mb-6 p-4 rounded-lg ${
-              message.type === 'success'
-                ? 'bg-green-50 border border-green-200 text-green-800'
-                : 'bg-red-50 border border-red-200 text-red-800'
-            }`}
-          >
+          <div className={`mb-6 p-4 rounded-lg ${getMessageClasses(message.type)}`}>
             {message.text}
           </div>
         )}
@@ -202,8 +262,8 @@ const EntryConfirmForm = () => {
                         <td className="px-6 py-4 text-sm text-gray-700">{toPersianNumber(result.number)}</td>
                         <td className="px-6 py-4 text-sm text-gray-700">{toPersianNumber(result.date_shamsi)}</td>
                         <td className="px-6 py-4">
-                          <span className={`status-badge ${result.status === 'در حال ارسال' ? 'status-sending' : 'status-repairing'}`}>
-                            {result.status}
+                          <span className={`status-badge ${getStatusClass(result.status)}`}>
+                            {result.status || 'نامعلوم'}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-center">
@@ -250,11 +310,12 @@ const EntryConfirmForm = () => {
               <button
                 onClick={() => {
                   setSelectedForm(null);
-                  setEntryForm({
-                    ...entryForm,
+                  setEntryForm((prev) => ({
+                    ...prev,
                     reference_exit_form_no: '',
                     reference_repair_form_no: '',
-                  });
+                  }));
+                  resetEntryAttachments();
                 }}
                 className="text-sm text-blue-600 hover:text-blue-800"
               >
@@ -351,6 +412,31 @@ const EntryConfirmForm = () => {
                 onChange={(e) => handleFormChange('reference_repair_form_no', e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">اسکن فرم تأیید ورود</label>
+              <input
+                key={`entry-form-${entryFileKey}`}
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handleFileChange('formScan')}
+                className="w-full text-sm text-gray-700"
+              />
+              <p className="text-xs text-gray-500 mt-1">فرمت‌های مجاز: JPG، PNG، PDF (حداکثر ۵ مگابایت)</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">تصویر تجهیز پس از تعمیر</label>
+              <input
+                key={`entry-equipment-${entryFileKey}`}
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange('equipmentImage')}
+                className="w-full text-sm text-gray-700"
+              />
+              <p className="text-xs text-gray-500 mt-1">عکس تجهیز پس از بازگشت و تعمیر را بارگذاری کنید.</p>
             </div>
           </div>
 

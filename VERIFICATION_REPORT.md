@@ -246,20 +246,11 @@
 
 ---
 
-## ✅ بررسی Package / Package Check
+## ✅ بررسی بسته‌بندی / Packaging Check
 
-**فایل ZIP:**
-- ✅ نام: CMMS-Mine-Maintenance-System.zip
-- ✅ حجم: 65 KB (فشرده، بدون node_modules)
-- ✅ تعداد فایل‌ها: 41 file
-- ✅ ساختار: استاندارد و منظم
-
-**محتویات:**
-- ✅ Backend: 3 فایل PHP
-- ✅ Frontend: 8 کامپوننت، 4 صفحه
-- ✅ Documentation: 3 فایل MD
-- ✅ Scripts: 4 اسکریپت راه‌اندازی
-- ✅ Configuration: package.json, tailwind.config.js, postcss.config.js
+- ✅ اندپوینت `download_zip.php` با موفقیت فایل ZIP تازه ایجاد می‌کند و شامل backend، frontend، مستندات و اسکریپت‌های راه‌اندازی است.
+- ✅ دستور جایگزین `zip -r` نیز تست شده و ساختار خروجی با ساختار پروژه هم‌خوانی دارد.
+- ✅ هیچ فایل باینری دائمی در مخزن وجود ندارد و بسته همواره از آخرین نسخه سورس تولید می‌شود.
 
 ---
 

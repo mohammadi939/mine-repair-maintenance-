@@ -152,7 +152,7 @@ https://github.com/YOUR_USERNAME/cmms-mine-maintenance
 3. تگ `v1.0.0` بسازید
 4. عنوان: `نسخه 1.0.0 - راه‌اندازی اولیه`
 5. توضیحات را از `DELIVERY_SUMMARY.md` کپی کنید
-6. فایل `CMMS-Mine-Maintenance-System.zip` را attach کنید
+6. با اجرای اندپوینت `download_zip.php` یک فایل `CMMS-Mine-Maintenance-System.zip` تازه بسازید و همان را attach کنید
 7. **Publish release** را کلیک کنید
 
 ---

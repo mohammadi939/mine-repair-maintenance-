@@ -69,12 +69,18 @@ function generateToken() {
 }
 
 function canAccessUnit($user, $unitId) {
-    if ($user['role'] === 'manager' || $user['role'] === 'storekeeper') {
+    if (in_array($user['role'], ['manager', 'storekeeper', 'workshop'])) {
         return true;
     }
+
+    if ($unitId === null) {
+        return false;
+    }
+
     if ($user['role'] === 'unit' && $user['unit_id'] == $unitId) {
         return true;
     }
+
     return false;
 }
 
@@ -174,12 +180,17 @@ try {
                 sendError('واحد الزامی است');
             }
         }
-        
+
+        $unitId = isset($data['unit_id']) && $data['unit_id'] !== '' ? (int)$data['unit_id'] : null;
+        if ($unitId === null) {
+            sendError('انتخاب واحد الزامی است');
+        }
+
         // Check access
-        if (!canAccessUnit($user, $data['unit_id'])) {
+        if (!canAccessUnit($user, $unitId)) {
             sendError('دسترسی به این واحد ندارید', 403);
         }
-        
+
         // Begin transaction
         $db->beginTransaction();
         
@@ -195,7 +206,7 @@ try {
                 $data['out_type'] ?? null,
                 $data['driver_name'] ?? null,
                 $data['reason'] ?? null,
-                $data['unit_id'] ?? null,
+                $unitId,
                 $user['id']
             ]);
             
@@ -261,29 +272,50 @@ try {
                 }
             }
         }
-        
-        // Check access
-        if (!canAccessUnit($user, $data['unit_id'])) {
+
+        $unitId = isset($data['unit_id']) && $data['unit_id'] !== '' ? (int)$data['unit_id'] : null;
+        $referenceExitFormId = null;
+        $exitFormToUpdate = null;
+
+        if (!empty($data['reference_exit_form_no'])) {
+            $stmt = $db->prepare("SELECT id, unit_id FROM exit_forms WHERE form_no = ?");
+            $stmt->execute([$data['reference_exit_form_no']]);
+            $ref = $stmt->fetch();
+
+            if (!$ref) {
+                sendError('فرم خروج مرجع یافت نشد', 404);
+            }
+
+            if (!canAccessUnit($user, $ref['unit_id'])) {
+                sendError('دسترسی به فرم خروج مرجع ندارید', 403);
+            }
+
+            $referenceExitFormId = $ref['id'];
+            $exitFormToUpdate = $ref['id'];
+
+            if ($unitId === null) {
+                $unitId = (int)$ref['unit_id'];
+            } elseif ($unitId !== (int)$ref['unit_id']) {
+                sendError('واحد انتخاب شده با فرم خروج مرجع مطابقت ندارد');
+            }
+        }
+
+        if ($unitId === null) {
+            sendError('انتخاب واحد الزامی است');
+        }
+
+        if (!canAccessUnit($user, $unitId)) {
             sendError('دسترسی به این واحد ندارید', 403);
         }
-        
+
         $db->beginTransaction();
-        
+
         try {
-            // Get reference exit form ID if form_no provided
-            $referenceExitFormId = null;
-            if (!empty($data['reference_exit_form_no'])) {
-                $stmt = $db->prepare("SELECT id FROM exit_forms WHERE form_no = ?");
-                $stmt->execute([$data['reference_exit_form_no']]);
-                $ref = $stmt->fetch();
-                if ($ref) {
-                    $referenceExitFormId = $ref['id'];
-                    // Update exit form status
-                    $stmt = $db->prepare("UPDATE exit_forms SET status = 'در حال تعمیر' WHERE id = ?");
-                    $stmt->execute([$referenceExitFormId]);
-                }
+            if ($exitFormToUpdate) {
+                $stmt = $db->prepare("UPDATE exit_forms SET status = 'در حال تعمیر' WHERE id = ?");
+                $stmt->execute([$exitFormToUpdate]);
             }
-            
+
             // Insert repair form
             $stmt = $db->prepare("
                 INSERT INTO repair_forms (form_no, unit_id, date_shamsi, description, reference_exit_form_id, created_by)
@@ -291,7 +323,7 @@ try {
             ");
             $stmt->execute([
                 $data['form_no'],
-                $data['unit_id'] ?? null,
+                $unitId,
                 $data['date_shamsi'],
                 $data['description'] ?? null,
                 $referenceExitFormId,
@@ -364,41 +396,64 @@ try {
             }
         }
         
+        $exitReference = null;
+        if (!empty($data['reference_exit_form_no'])) {
+            $stmt = $db->prepare("SELECT id, unit_id FROM exit_forms WHERE form_no = ?");
+            $stmt->execute([$data['reference_exit_form_no']]);
+            $exitReference = $stmt->fetch();
+
+            if (!$exitReference) {
+                sendError('فرم خروج مرجع یافت نشد', 404);
+            }
+
+            if (!canAccessUnit($user, $exitReference['unit_id'])) {
+                sendError('دسترسی به فرم خروج مرجع ندارید', 403);
+            }
+        }
+
+        $repairReference = null;
+        if (!empty($data['reference_repair_form_no'])) {
+            $stmt = $db->prepare("SELECT id, unit_id FROM repair_forms WHERE form_no = ?");
+            $stmt->execute([$data['reference_repair_form_no']]);
+            $repairReference = $stmt->fetch();
+
+            if (!$repairReference) {
+                sendError('فرم تعمیر مرجع یافت نشد', 404);
+            }
+
+            if (!canAccessUnit($user, $repairReference['unit_id'])) {
+                sendError('دسترسی به فرم تعمیر مرجع ندارید', 403);
+            }
+        }
+
+        if ($user['role'] === 'unit' && !$exitReference) {
+            sendError('واحدها باید فرم خروج مرجع را مشخص کنند');
+        }
+
+        if ($exitReference && $repairReference && (int)$exitReference['unit_id'] !== (int)$repairReference['unit_id']) {
+            sendError('واحد فرم خروج و فرم تعمیر مرجع باید یکسان باشد');
+        }
+
         $db->beginTransaction();
-        
+
         try {
-            // Get reference IDs
-            $referenceExitFormId = null;
-            $referenceRepairFormId = null;
-            
-            if (!empty($data['reference_exit_form_no'])) {
-                $stmt = $db->prepare("SELECT id FROM exit_forms WHERE form_no = ?");
-                $stmt->execute([$data['reference_exit_form_no']]);
-                $ref = $stmt->fetch();
-                if ($ref) {
-                    $referenceExitFormId = $ref['id'];
-                    // Update status
-                    $stmt = $db->prepare("UPDATE exit_forms SET status = 'تحویل به معدن' WHERE id = ?");
-                    $stmt->execute([$referenceExitFormId]);
-                }
+            $referenceExitFormId = $exitReference ? $exitReference['id'] : null;
+            $referenceRepairFormId = $repairReference ? $repairReference['id'] : null;
+
+            if ($referenceExitFormId) {
+                $stmt = $db->prepare("UPDATE exit_forms SET status = 'تحویل به معدن' WHERE id = ?");
+                $stmt->execute([$referenceExitFormId]);
             }
-            
-            if (!empty($data['reference_repair_form_no'])) {
-                $stmt = $db->prepare("SELECT id FROM repair_forms WHERE form_no = ?");
-                $stmt->execute([$data['reference_repair_form_no']]);
-                $ref = $stmt->fetch();
-                if ($ref) {
-                    $referenceRepairFormId = $ref['id'];
-                    // Update status
-                    $stmt = $db->prepare("UPDATE repair_forms SET status = 'تعمیر شده' WHERE id = ?");
-                    $stmt->execute([$referenceRepairFormId]);
-                }
+
+            if ($referenceRepairFormId) {
+                $stmt = $db->prepare("UPDATE repair_forms SET status = 'تعمیر شده' WHERE id = ?");
+                $stmt->execute([$referenceRepairFormId]);
             }
-            
+
             // Insert entry confirmation
             $stmt = $db->prepare("
-                INSERT INTO entry_confirms 
-                (confirm_no, purchase_date_shamsi, purchase_center, purchase_request_code, 
+                INSERT INTO entry_confirms
+                (confirm_no, purchase_date_shamsi, purchase_center, purchase_request_code,
                  buyer_name, driver_name, reference_exit_form_id, reference_repair_form_id, created_by)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
