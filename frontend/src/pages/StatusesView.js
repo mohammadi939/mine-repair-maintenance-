@@ -1,174 +1,256 @@
-import React, { useState, useEffect } from 'react';
-import { getAllStatuses } from '../api';
-import { toPersianNumber, getFormTypeLabel, getStatusClass } from '../utils';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  fetchFailureReports,
+  fetchExitRequests,
+  fetchRepairOrders,
+  fetchNotifications,
+  fetchTimeline,
+  getEquipments,
+  markNotificationSent,
+} from '../api';
+import { getStatusClass, getFormTypeLabel, toPersianNumber, translateStatus } from '../utils';
 
 const StatusesView = () => {
-  const [statuses, setStatuses] = useState([]);
+  const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [filters, setFilters] = useState({ type: 'all', status: 'all' });
+  const [error, setError] = useState(null);
+  const [equipments, setEquipments] = useState([]);
+  const [selectedEquipment, setSelectedEquipment] = useState('');
+  const [timelineEvents, setTimelineEvents] = useState([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState(null);
+
+  const extractArray = (payload) => {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload.data)) return payload.data;
+    return [];
+  };
 
   useEffect(() => {
-    loadStatuses();
+    const load = async () => {
+      try {
+        setLoading(true);
+        const [failures, exits, repairs, notifications, equipmentResponse] = await Promise.all([
+          fetchFailureReports({ per_page: 10 }),
+          fetchExitRequests({ per_page: 10 }),
+          fetchRepairOrders({ per_page: 10 }),
+          fetchNotifications({ per_page: 10 }),
+          getEquipments({ per_page: 100 }),
+        ]);
+        const failureItems = (failures?.data ?? failures).map((item) => ({
+          id: `failure-${item.id}`,
+          type: 'failure',
+          form_no: item.failure_code,
+          title: item.equipment?.name,
+          status: item.status,
+          date: item.reported_at,
+          meta: `شدت: ${item.severity}`,
+        }));
+        const exitItems = (exits?.data ?? exits).map((item) => ({
+          id: `exit-${item.id}`,
+          type: 'exit',
+          form_no: item.form_number,
+          title: item.equipment?.name,
+          status: item.status,
+          date: item.created_at,
+          meta: item.reason,
+        }));
+        const repairItems = (repairs?.data ?? repairs).map((item) => ({
+          id: `repair-${item.id}`,
+          type: 'repair',
+          form_no: item.form_number,
+          title: item.exit_request?.equipment?.name,
+          status: item.status,
+          date: item.completed_at || item.started_at,
+          meta: item.actions?.length ? `${item.actions.length} اقدام` : '',
+        }));
+        const notificationItems = (notifications?.data ?? notifications).map((item) => ({
+          id: `notification-${item.id}`,
+          type: 'notification',
+          form_no: item.id,
+          title: item.equipment?.name,
+          status: item.status,
+          date: item.expected_at,
+          meta: item.message,
+          raw: item,
+        }));
+        setRecords([...failureItems, ...exitItems, ...repairItems, ...notificationItems]);
+        const equipmentList = extractArray(equipmentResponse?.data ?? equipmentResponse);
+        setEquipments(equipmentList);
+        if (!selectedEquipment && equipmentList.length) {
+          setSelectedEquipment(Number(equipmentList[0].id));
+        }
+      } catch (err) {
+        setError('خطا در بارگذاری وضعیت‌ها');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadStatuses = async () => {
+  useEffect(() => {
+    const loadTimeline = async () => {
+      if (!selectedEquipment) {
+        setTimelineEvents([]);
+        return;
+      }
+      try {
+        setTimelineLoading(true);
+        setTimelineError(null);
+        const response = await fetchTimeline(selectedEquipment, { per_page: 20 });
+        const events = extractArray(response?.data ?? response);
+        setTimelineEvents(events);
+      } catch (err) {
+        setTimelineError('خطا در بارگذاری تایم‌لاین');
+        console.error('timeline load error', err);
+      } finally {
+        setTimelineLoading(false);
+      }
+    };
+    loadTimeline();
+  }, [selectedEquipment]);
+
+  const selectedEquipmentName = useMemo(() => {
+    if (selectedEquipment === '' || selectedEquipment === null) {
+      return 'انتخاب نشده';
+    }
+    return equipments.find((item) => item.id === Number(selectedEquipment))?.name || 'انتخاب نشده';
+  }, [equipments, selectedEquipment]);
+
+  const filteredRecords = useMemo(() => {
+    return records.filter((record) => {
+      if (filters.type !== 'all' && record.type !== filters.type) return false;
+      if (filters.status !== 'all' && record.status !== filters.status) return false;
+      return true;
+    });
+  }, [records, filters]);
+
+  const handleMarkSent = async (record) => {
     try {
-      const data = await getAllStatuses();
-      setStatuses(data);
+      await markNotificationSent(record.raw.id);
+      setRecords((prev) =>
+        prev.map((item) =>
+          item.id === record.id
+            ? { ...item, status: 'sent', meta: 'ارسال شد', raw: { ...item.raw, status: 'sent' } }
+            : item
+        )
+      );
     } catch (err) {
-      console.error('Error loading statuses:', err);
-    } finally {
-      setLoading(false);
+      console.error('mark notification error', err);
     }
   };
 
-  const filteredStatuses = statuses.filter((status) => {
-    if (filterType !== 'all' && status.type !== filterType) return false;
-    if (filterStatus !== 'all' && status.status !== filterStatus) return false;
-    return true;
-  });
+  const contextLabels = {
+    severity: 'شدت',
+    report_id: 'کد گزارش',
+    exit_request_id: 'درخواست خروج',
+    repair_order_id: 'سفارش تعمیر',
+    reentry_approval_id: 'تایید ورود',
+    status: 'وضعیت',
+  };
 
-  const statusOptions = [
-    { value: 'all', label: 'همه' },
-    { value: 'در حال ارسال', label: 'در حال ارسال' },
-    { value: 'در حال تعمیر', label: 'در حال تعمیر' },
-    { value: 'تعمیر شده', label: 'تعمیر شده' },
-    { value: 'تحویل به معدن', label: 'تحویل به معدن' },
-  ];
-
-  const typeOptions = [
-    { value: 'all', label: 'همه' },
-    { value: 'exit', label: 'فرم خروج' },
-    { value: 'repair', label: 'فرم تعمیر' },
-    { value: 'entry', label: 'تأیید ورود' },
-  ];
+  const renderContextValue = (key, value) => {
+    if (key === 'status') {
+      return translateStatus(value);
+    }
+    if (value === null || value === undefined) {
+      return '-';
+    }
+    if (typeof value === 'number') {
+      return toPersianNumber(value);
+    }
+    if (typeof value === 'string') {
+      return toPersianNumber(value);
+    }
+    return JSON.stringify(value);
+  };
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">وضعیت‌ها</h2>
-          <button
-            onClick={loadStatuses}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-          >
-            بروزرسانی
-          </button>
-        </div>
-
-        {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">فیلتر بر اساس نوع</label>
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">پایش وضعیت و اعلان‌ها</h2>
+          <div className="flex gap-4">
             <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              value={filters.type}
+              onChange={(e) => setFilters((prev) => ({ ...prev, type: e.target.value }))}
+              className="border rounded-lg px-3 py-2 bg-white dark:bg-slate-900 dark:border-slate-700 text-sm"
             >
-              {typeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <option value="all">همه انواع</option>
+              <option value="failure">گزارش خرابی</option>
+              <option value="exit">درخواست خروج</option>
+              <option value="repair">سفارش تعمیر</option>
+              <option value="notification">اعلان تأخیر</option>
             </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">فیلتر بر اساس وضعیت</label>
             <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              value={filters.status}
+              onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
+              className="border rounded-lg px-3 py-2 bg-white dark:bg-slate-900 dark:border-slate-700 text-sm"
             >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <option value="all">همه وضعیت‌ها</option>
+              <option value="pending">در انتظار</option>
+              <option value="approved">تایید شده</option>
+              <option value="rejected">رد شده</option>
+              <option value="in_progress">در حال انجام</option>
+              <option value="completed">تکمیل شده</option>
+              <option value="sent">ارسال شده</option>
             </select>
           </div>
         </div>
 
-        {/* Status Legend */}
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">راهنمای رنگ‌ها</h3>
-          <div className="flex flex-wrap gap-4">
-            <div className="flex items-center gap-2">
-              <span className="status-badge status-sending">در حال ارسال</span>
-              <span className="text-sm text-gray-600">- ارسال شده برای تعمیر</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="status-badge status-repairing">در حال تعمیر</span>
-              <span className="text-sm text-gray-600">- در حال تعمیر</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="status-badge status-repaired">تعمیر شده</span>
-              <span className="text-sm text-gray-600">- تعمیر تکمیل شده</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="status-badge status-delivered">تحویل به معدن</span>
-              <span className="text-sm text-gray-600">- تحویل داده شده</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="status-badge status-unknown">نامعلوم</span>
-              <span className="text-sm text-gray-600">- وضعیت نامشخص</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Statuses Table */}
         {loading ? (
-          <div className="text-center py-12 text-gray-500">در حال بارگذاری...</div>
-        ) : filteredStatuses.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">هیچ فرمی یافت نشد</div>
+          <div className="text-gray-500 dark:text-slate-300">در حال بارگذاری اطلاعات...</div>
+        ) : error ? (
+          <div className="text-red-600">{error}</div>
+        ) : filteredRecords.length === 0 ? (
+          <div className="text-gray-500 dark:text-slate-300">رکوردی مطابق فیلتر یافت نشد.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-sm">
+              <thead className="bg-gray-50 dark:bg-slate-900">
                 <tr>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">نوع فرم</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">شماره فرم</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">تاریخ</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">واحد</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">وضعیت</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">مراجع</th>
+                  <th className="px-4 py-2 text-right">نوع</th>
+                  <th className="px-4 py-2 text-right">شناسه/شماره</th>
+                  <th className="px-4 py-2 text-right">عنوان</th>
+                  <th className="px-4 py-2 text-right">وضعیت</th>
+                  <th className="px-4 py-2 text-right">تاریخ</th>
+                  <th className="px-4 py-2 text-right">توضیحات</th>
+                  <th className="px-4 py-2 text-center">عملیات</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredStatuses.map((status, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
-                        {getFormTypeLabel(status.type)}
+              <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                {filteredRecords.map((record) => (
+                  <tr key={record.id}>
+                    <td className="px-4 py-2 text-gray-700 dark:text-slate-300">{getFormTypeLabel(record.type)}</td>
+                    <td className="px-4 py-2 font-semibold text-gray-900 dark:text-slate-100">
+                      {toPersianNumber(record.form_no)}
+                    </td>
+                    <td className="px-4 py-2 text-gray-700 dark:text-slate-300">{record.title}</td>
+                    <td className="px-4 py-2">
+                      <span className={`status-badge ${getStatusClass(record.status)}`}>
+                        {translateStatus(record.status)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {toPersianNumber(status.form_no)}
+                    <td className="px-4 py-2 text-gray-600 dark:text-slate-300">
+                      {record.date ? toPersianNumber(record.date) : '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {status.date_shamsi ? toPersianNumber(status.date_shamsi) : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {status.unit_name || '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`status-badge ${getStatusClass(status.status)}`}>
-                        {status.status || 'نامعلوم'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {status.reference_exit_form_no && (
-                        <div className="text-xs">
-                          خروج: {toPersianNumber(status.reference_exit_form_no)}
-                        </div>
+                    <td className="px-4 py-2 text-gray-600 dark:text-slate-300">{record.meta || '-'}</td>
+                    <td className="px-4 py-2 text-center">
+                      {record.type === 'notification' && record.status !== 'sent' ? (
+                        <button
+                          onClick={() => handleMarkSent(record)}
+                          className="px-3 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-xs"
+                        >
+                          علامت به عنوان ارسال شده
+                        </button>
+                      ) : (
+                        '-'
                       )}
-                      {status.reference_repair_form_no && (
-                        <div className="text-xs">
-                          تعمیر: {toPersianNumber(status.reference_repair_form_no)}
-                        </div>
-                      )}
-                      {!status.reference_exit_form_no && !status.reference_repair_form_no && '-'}
                     </td>
                   </tr>
                 ))}
@@ -176,50 +258,78 @@ const StatusesView = () => {
             </table>
           </div>
         )}
+      </div>
 
-        {/* Summary */}
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">
-                {toPersianNumber(filteredStatuses.length)}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">کل فرم‌ها</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {toPersianNumber(
-                  filteredStatuses.filter((s) => s.status === 'در حال ارسال').length
-                )}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">در حال ارسال</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-orange-600">
-                {toPersianNumber(
-                  filteredStatuses.filter((s) => s.status === 'در حال تعمیر').length
-                )}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">در حال تعمیر</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                {toPersianNumber(
-                  filteredStatuses.filter((s) => s.status === 'تعمیر شده').length
-                )}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">تعمیر شده</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-purple-600">
-                {toPersianNumber(
-                  filteredStatuses.filter((s) => s.status === 'تحویل به معدن').length
-                )}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">تحویل به معدن</div>
-            </div>
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">تایم‌لاین وضعیت تجهیزات</h2>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+              نمایش رویدادهای ثبت شده برای تجهیز انتخاب شده ({selectedEquipmentName})
+            </p>
           </div>
+          <select
+            value={selectedEquipment}
+            onChange={(e) => {
+              const value = e.target.value;
+              setSelectedEquipment(value ? Number(value) : '');
+            }}
+            className="border rounded-lg px-3 py-2 bg-white dark:bg-slate-900 dark:border-slate-700 text-sm"
+          >
+            <option value="">انتخاب تجهیز</option>
+            {equipments.map((equipment) => (
+              <option key={equipment.id} value={equipment.id}>
+                {equipment.name}
+              </option>
+            ))}
+          </select>
         </div>
+
+        {timelineLoading ? (
+          <div className="text-gray-500 dark:text-slate-300">در حال بارگذاری رویدادها...</div>
+        ) : timelineError ? (
+          <div className="text-red-600">{timelineError}</div>
+        ) : !selectedEquipment ? (
+          <div className="text-gray-500 dark:text-slate-300 text-sm">لطفاً تجهیزی را برای مشاهده تایم‌لاین انتخاب کنید.</div>
+        ) : timelineEvents.length === 0 ? (
+          <div className="text-gray-500 dark:text-slate-300 text-sm">رویدادی برای این تجهیز ثبت نشده است.</div>
+        ) : (
+          <div className="relative pr-4 border-r-2 border-blue-100 dark:border-slate-700 space-y-6">
+            {timelineEvents.map((event) => (
+              <div key={event.id} className="relative pr-6">
+                <span className="absolute -right-3 top-3 h-3 w-3 rounded-full border-2 border-white dark:border-slate-800 bg-blue-500"></span>
+                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="text-sm font-semibold text-gray-800 dark:text-slate-100">{event.title}</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">
+                      {event.occurred_at ? toPersianNumber(new Date(event.occurred_at).toLocaleString('fa-IR')) : '-'}
+                    </div>
+                  </div>
+                  {event.description && (
+                    <p className="mt-2 text-sm text-gray-600 dark:text-slate-300">{event.description}</p>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500 dark:text-slate-400">
+                    <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
+                      {event.event_type}
+                    </span>
+                    {event.user?.name && <span>ثبت توسط: {event.user.name}</span>}
+                    {event.context &&
+                      Object.entries(event.context)
+                        .filter(([, value]) => value !== null && value !== '')
+                        .map(([key, value]) => (
+                          <span
+                            key={key}
+                            className="px-2 py-1 rounded-full bg-white/60 dark:bg-slate-800/60"
+                          >
+                            {contextLabels[key] || key}: {renderContextValue(key, value)}
+                          </span>
+                        ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

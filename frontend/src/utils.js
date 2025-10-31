@@ -24,23 +24,47 @@ export const formatJalaliDate = (dateObj) => {
 
 // Get status badge class
 export const getStatusClass = (status) => {
+  const normalized = String(status || '').toLowerCase();
   const statusMap = {
-    'در حال ارسال': 'status-sending',
-    'در حال تعمیر': 'status-repairing',
-    'تعمیر شده': 'status-repaired',
-    'تحویل به معدن': 'status-delivered',
+    pending: 'status-sending',
+    open: 'status-sending',
+    'in_progress': 'status-repairing',
+    approved: 'status-repaired',
+    resolved: 'status-repaired',
+    completed: 'status-repaired',
+    returned: 'status-delivered',
+    closed: 'status-delivered',
+    sent: 'status-delivered',
   };
-  return statusMap[status] || 'status-unknown';
+  return statusMap[normalized] || 'status-unknown';
 };
 
 // Get form type label
 export const getFormTypeLabel = (type) => {
   const typeMap = {
-    'exit': 'فرم خروج',
-    'repair': 'فرم تعمیر',
-    'entry': 'تأیید ورود',
+    exit: 'فرم خروج',
+    repair: 'فرم تعمیر',
+    entry: 'تأیید ورود',
+    failure: 'گزارش خرابی',
+    notification: 'اعلان تأخیر',
   };
   return typeMap[type] || type;
+};
+
+export const translateStatus = (status) => {
+  const map = {
+    pending: 'در انتظار',
+    approved: 'تایید شده',
+    rejected: 'رد شده',
+    open: 'باز',
+    'in_progress': 'در حال انجام',
+    resolved: 'حل شده',
+    completed: 'تکمیل شده',
+    returned: 'بازگشته',
+    closed: 'بسته شده',
+    sent: 'ارسال شده',
+  };
+  return map[status] || status;
 };
 
 // Generate unique form number
