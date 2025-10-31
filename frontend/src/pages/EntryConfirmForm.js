@@ -1,464 +1,253 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import DatePicker from 'react-multi-date-picker';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
-import { searchForms, getFormDetails, createEntryConfirm } from '../api';
-import { toPersianNumber, formatJalaliDate, generateFormNumber, validateItemsCount, validateItem } from '../utils';
+import {
+  createReEntryApproval,
+  fetchRepairOrders,
+  fetchReEntryApprovals,
+} from '../api';
+import {
+  formatJalaliDate,
+  generateFormNumber,
+  getStatusClass,
+  toPersianNumber,
+  translateStatus,
+} from '../utils';
 
 const EntryConfirmForm = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [selectedForm, setSelectedForm] = useState(null);
+  const [repairOrders, setRepairOrders] = useState([]);
+  const [approvals, setApprovals] = useState([]);
+  const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
+  const [filters, setFilters] = useState({ status: 'all' });
 
-  const [entryForm, setEntryForm] = useState({
-    confirm_no: generateFormNumber('ENTRY'),
-    purchase_date_shamsi: null,
-    purchase_center: '',
-    purchase_request_code: '',
-    buyer_name: '',
-    driver_name: '',
-    reference_exit_form_no: '',
-    reference_repair_form_no: '',
-    items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
+  const [form, setForm] = useState({
+    repair_order_id: '',
+    form_number: generateFormNumber('ENT'),
+    approved_at: null,
+    inspection_notes: '',
+    safety_note: '',
+    status: 'approved',
   });
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      setMessage({ type: 'error', text: 'لطفاً شماره فرم را وارد کنید' });
-      return;
-    }
-
-    setLoading(true);
-    setMessage({ type: '', text: '' });
-    try {
-      const results = await searchForms(searchQuery);
-      setSearchResults(results);
-      if (results.length === 0) {
-        setMessage({ type: 'error', text: 'هیچ فرمی یافت نشد' });
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        const [repairs, entries] = await Promise.all([
+          fetchRepairOrders({ status: 'completed', per_page: 20 }),
+          fetchReEntryApprovals({ per_page: 10 }),
+        ]);
+        const repairData = repairs?.data ?? repairs;
+        setRepairOrders(repairData);
+        if (repairData?.length) {
+          setForm((prev) => ({ ...prev, repair_order_id: repairData[0].id }));
+        }
+        const entryData = entries?.data ?? entries;
+        setApprovals(entryData);
+      } catch (error) {
+        console.error('load approvals', error);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      setMessage({ type: 'error', text: 'خطا در جستجو' });
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+    load();
+  }, []);
 
-  const handleSelectForm = async (form) => {
-    setLoading(true);
-    try {
-      const details = await getFormDetails(form.type, form.id);
-      setSelectedForm(details);
-      
-      // Pre-fill entry form
-      setEntryForm((prev) => ({
-        ...prev,
-        reference_exit_form_no: form.type === 'exit' ? form.number : details.reference_exit_form_no || '',
-        reference_repair_form_no: form.type === 'repair' ? form.number : '',
-      }));
-      
-      setSearchResults([]);
-      setSearchQuery('');
-    } catch (err) {
-      setMessage({ type: 'error', text: 'خطا در بارگذاری جزئیات فرم' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleFormChange = (field, value) => {
-    setEntryForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleItemChange = (index, field, value) => {
-    const newItems = [...entryForm.items];
-    newItems[index][field] = value;
-    setEntryForm((prev) => ({ ...prev, items: newItems }));
-  };
-
-  const addItem = () => {
-    if (entryForm.items.length < 11) {
-      setEntryForm((prev) => ({
-        ...prev,
-        items: [...prev.items, { description: '', code: '', quantity: '', unit: 'عدد' }],
-      }));
-    }
-  };
-
-  const removeItem = (index) => {
-    if (entryForm.items.length > 1) {
-      const newItems = entryForm.items.filter((_, i) => i !== index);
-      setEntryForm((prev) => ({ ...prev, items: newItems }));
-    }
-  };
-
-  const handleSubmit = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    setMessage({ type: '', text: '' });
-
-    // Validation
-    const itemsError = validateItemsCount(entryForm.items, 1, 11);
-    if (itemsError) {
-      setMessage({ type: 'error', text: itemsError });
+    setMessage(null);
+    if (!form.repair_order_id) {
+      setMessage({ type: 'error', text: 'انتخاب دستور تعمیر الزامی است.' });
       return;
     }
 
-    for (const item of entryForm.items) {
-      const itemError = validateItem(item);
-      if (itemError) {
-        setMessage({ type: 'error', text: itemError });
-        return;
-      }
-    }
-
     try {
-      const data = {
-        ...entryForm,
-        purchase_date_shamsi: entryForm.purchase_date_shamsi ? formatJalaliDate(entryForm.purchase_date_shamsi) : null,
+      setLoading(true);
+      const payload = {
+        repair_order_id: form.repair_order_id,
+        form_number: form.form_number,
+        inspection_notes: form.inspection_notes,
+        status: form.status,
+        approved_at: form.approved_at ? formatJalaliDate(form.approved_at) : null,
+        safety_checks: form.safety_note
+          ? form.safety_note.split('\n').filter(Boolean).map((item) => ({ title: item }))
+          : [],
       };
-
-      await createEntryConfirm(data);
-      setMessage({ type: 'success', text: 'تأیید ورود با موفقیت ثبت شد' });
-      
-      // Reset form
-      setEntryForm({
-        confirm_no: generateFormNumber('ENTRY'),
-        purchase_date_shamsi: null,
-        purchase_center: '',
-        purchase_request_code: '',
-        buyer_name: '',
-        driver_name: '',
-        reference_exit_form_no: '',
-        reference_repair_form_no: '',
-        items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
+      const approval = await createReEntryApproval(payload);
+      setMessage({ type: 'success', text: 'تأیید ورود با موفقیت ثبت شد.' });
+      setForm({
+        repair_order_id: form.repair_order_id,
+        form_number: generateFormNumber('ENT'),
+        approved_at: null,
+        inspection_notes: '',
+        safety_note: '',
+        status: 'approved',
       });
-      setSelectedForm(null);
-    } catch (err) {
-      setMessage({ type: 'error', text: err.response?.data?.error || 'خطا در ثبت تأیید ورود' });
+      setApprovals((prev) => [approval, ...prev].slice(0, 10));
+    } catch (error) {
+      setMessage({ type: 'error', text: error.response?.data?.message || 'خطا در ثبت تأیید ورود رخ داد.' });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const unitOptions = ['عدد', 'حلقه', 'لاستیک', 'متر', 'کیلوگرم', 'لیتر', 'دستگاه'];
+  const filteredApprovals = useMemo(() => {
+    if (filters.status === 'all') return approvals;
+    return approvals.filter((item) => item.status === filters.status);
+  }, [approvals, filters.status]);
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">ثبت تأیید ورود</h2>
-
-        {message.text && (
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-6">ثبت تأیید ورود تجهیز</h2>
+        {message && (
           <div
-            className={`mb-6 p-4 rounded-lg ${
+            className={`mb-6 px-4 py-3 rounded-lg text-sm font-medium ${
               message.type === 'success'
-                ? 'bg-green-50 border border-green-200 text-green-800'
-                : 'bg-red-50 border border-red-200 text-red-800'
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-red-50 text-red-700 border border-red-200'
             }`}
           >
             {message.text}
           </div>
         )}
 
-        {/* Search Section */}
-        {!selectedForm && (
-          <div className="mb-8">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">جستجوی فرم خروج/تعمیر</h3>
-            <div className="flex gap-4">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder="شماره فرم خروج یا تعمیر را وارد کنید"
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                onClick={handleSearch}
-                disabled={loading}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-              >
-                {loading ? 'در حال جستجو...' : 'جستجو'}
-              </button>
-            </div>
-
-            {/* Search Results */}
-            {searchResults.length > 0 && (
-              <div className="mt-4 border border-gray-300 rounded-lg overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">نوع</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">شماره فرم</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">تاریخ</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">وضعیت</th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">عملیات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {searchResults.map((result, index) => (
-                      <tr key={index}>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          {result.type === 'exit' ? 'فرم خروج' : 'فرم تعمیر'}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{toPersianNumber(result.number)}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{toPersianNumber(result.date_shamsi)}</td>
-                        <td className="px-6 py-4">
-                          <span className={`status-badge ${result.status === 'در حال ارسال' ? 'status-sending' : 'status-repairing'}`}>
-                            {result.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <button
-                            onClick={() => handleSelectForm(result)}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                          >
-                            انتخاب
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Selected Form Info */}
-        {selectedForm && (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex justify-between items-start">
-              <div>
-                <h3 className="text-lg font-medium text-blue-900 mb-2">فرم انتخاب شده</h3>
-                <div className="text-sm text-blue-800 space-y-1">
-                  <p>
-                    <span className="font-medium">نوع:</span>{' '}
-                    {selectedForm.form_no?.startsWith('EXIT') || !selectedForm.form_no?.startsWith('REPAIR') ? 'فرم خروج' : 'فرم تعمیر'}
-                  </p>
-                  <p>
-                    <span className="font-medium">شماره:</span> {toPersianNumber(selectedForm.form_no)}
-                  </p>
-                  <p>
-                    <span className="font-medium">تاریخ:</span> {toPersianNumber(selectedForm.date_shamsi)}
-                  </p>
-                  {selectedForm.reference_exit_form_no && (
-                    <p>
-                      <span className="font-medium">فرم خروج مرجع:</span> {toPersianNumber(selectedForm.reference_exit_form_no)}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setSelectedForm(null);
-                  setEntryForm({
-                    ...entryForm,
-                    reference_exit_form_no: '',
-                    reference_repair_form_no: '',
-                  });
-                }}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                تغییر فرم
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Entry Confirmation Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <form className="space-y-4" onSubmit={submit}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                شماره تأیید <span className="text-red-500">*</span>
-              </label>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">دستور تعمیر</label>
+              <select
+                value={form.repair_order_id}
+                onChange={(e) => setForm({ ...form, repair_order_id: Number(e.target.value) })}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              >
+                <option value="">انتخاب کنید</option>
+                {repairOrders.map((order) => (
+                  <option key={order.id} value={order.id}>
+                    {order.form_number} - {order.exit_request?.equipment?.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">شماره فرم تأیید</label>
               <input
-                type="text"
-                value={toPersianNumber(entryForm.confirm_no)}
-                onChange={(e) => handleFormChange('confirm_no', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                required
+                value={form.form_number}
+                onChange={(e) => setForm({ ...form, form_number: e.target.value })}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">تاریخ خرید/بازگشت</label>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">تاریخ تأیید</label>
               <DatePicker
-                value={entryForm.purchase_date_shamsi}
-                onChange={(date) => handleFormChange('purchase_date_shamsi', date)}
+                value={form.approved_at}
+                onChange={(value) => setForm({ ...form, approved_at: value })}
                 calendar={persian}
                 locale={persian_fa}
+                className="w-full"
                 format="YYYY/MM/DD"
-                inputClass="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                containerClassName="w-full"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">مرکز خرید</label>
-              <input
-                type="text"
-                value={entryForm.purchase_center}
-                onChange={(e) => handleFormChange('purchase_center', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">کد درخواست خرید</label>
-              <input
-                type="text"
-                value={entryForm.purchase_request_code}
-                onChange={(e) => handleFormChange('purchase_request_code', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">نام خریدار</label>
-              <input
-                type="text"
-                value={entryForm.buyer_name}
-                onChange={(e) => handleFormChange('buyer_name', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">نام راننده</label>
-              <input
-                type="text"
-                value={entryForm.driver_name}
-                onChange={(e) => handleFormChange('driver_name', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">شماره فرم خروج مرجع</label>
-              <input
-                type="text"
-                value={toPersianNumber(entryForm.reference_exit_form_no)}
-                onChange={(e) => handleFormChange('reference_exit_form_no', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">شماره فرم تعمیر مرجع</label>
-              <input
-                type="text"
-                value={toPersianNumber(entryForm.reference_repair_form_no)}
-                onChange={(e) => handleFormChange('reference_repair_form_no', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
-              />
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">وضعیت</label>
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              >
+                <option value="approved">تایید شده</option>
+                <option value="rejected">رد شده</option>
+                <option value="pending">در انتظار</option>
+              </select>
             </div>
           </div>
 
-          {/* Items Table */}
           <div>
-            <div className="flex justify-between items-center mb-4">
-              <label className="block text-sm font-medium text-gray-700">
-                اقلام (حداقل ۱، حداکثر ۱۱) <span className="text-red-500">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={addItem}
-                disabled={entryForm.items.length >= 11}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
-              >
-                + افزودن ردیف
-              </button>
-            </div>
+            <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">نتیجه بازرسی</label>
+            <textarea
+              value={form.inspection_notes}
+              onChange={(e) => setForm({ ...form, inspection_notes: e.target.value })}
+              rows={4}
+              className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              required
+            />
+          </div>
 
-            <div className="overflow-x-auto border border-gray-300 rounded-lg">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase w-8">#</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                      شرح کالا <span className="text-red-500">*</span>
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">کد کالا (اختیاری)</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                      تعداد <span className="text-red-500">*</span>
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                      واحد <span className="text-red-500">*</span>
-                    </th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase w-20">عملیات</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {entryForm.items.map((item, index) => (
-                    <tr key={index}>
-                      <td className="px-4 py-3 text-sm text-gray-700">{toPersianNumber(index + 1)}</td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          value={item.description}
-                          onChange={(e) => handleItemChange(index, 'description', e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          required
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          value={item.code}
-                          onChange={(e) => handleItemChange(index, 'code', e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={item.quantity}
-                          onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          required
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <select
-                          value={item.unit}
-                          onChange={(e) => handleItemChange(index, 'unit', e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          required
-                        >
-                          {unitOptions.map((unit) => (
-                            <option key={unit} value={unit}>
-                              {unit}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => removeItem(index)}
-                          disabled={entryForm.items.length === 1}
-                          className="text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div>
+            <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">چک لیست ایمنی (هر آیتم در یک خط)</label>
+            <textarea
+              value={form.safety_note}
+              onChange={(e) => setForm({ ...form, safety_note: e.target.value })}
+              rows={4}
+              className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+            />
           </div>
 
           <div className="flex justify-end">
             <button
               type="submit"
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+              disabled={loading}
             >
-              ذخیره تأیید ورود
+              {loading ? 'در حال ثبت...' : 'ثبت تأیید ورود'}
             </button>
           </div>
         </form>
+      </div>
+
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">سوابق تأیید ورود</h2>
+          <select
+            value={filters.status}
+            onChange={(e) => setFilters({ status: e.target.value })}
+            className="border rounded-lg px-3 py-2 bg-white dark:bg-slate-900 dark:border-slate-700 text-sm"
+          >
+            <option value="all">همه وضعیت‌ها</option>
+            <option value="approved">تایید شده</option>
+            <option value="pending">در انتظار</option>
+            <option value="rejected">رد شده</option>
+          </select>
+        </div>
+
+        {filteredApprovals.length === 0 ? (
+          <p className="text-gray-500 dark:text-slate-300 text-sm">تأییدیه‌ای یافت نشد.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-sm">
+              <thead className="bg-gray-50 dark:bg-slate-900">
+                <tr>
+                  <th className="px-4 py-2 text-right">شماره فرم</th>
+                  <th className="px-4 py-2 text-right">تجهیز</th>
+                  <th className="px-4 py-2 text-right">وضعیت</th>
+                  <th className="px-4 py-2 text-right">تاریخ</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                {filteredApprovals.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-4 py-2 font-semibold text-gray-900 dark:text-slate-100">
+                      {toPersianNumber(item.form_number)}
+                    </td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-slate-300">
+                      {item.repair_order?.exit_request?.equipment?.name}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className={`status-badge ${getStatusClass(item.status)}`}>
+                        {translateStatus(item.status)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-slate-300">
+                      {item.approved_at ? toPersianNumber(item.approved_at) : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

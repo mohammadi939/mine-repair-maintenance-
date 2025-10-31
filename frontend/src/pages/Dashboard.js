@@ -1,114 +1,154 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getRecentForms } from '../api';
-import { useAuth } from '../AuthContext';
-import { toPersianNumber, getFormTypeLabel, getStatusClass } from '../utils';
+import { fetchDashboard, fetchFailureReports, fetchNotifications } from '../api';
+import { getStatusClass, translateStatus, toPersianNumber } from '../utils';
+
+const StatCard = ({ title, value, icon, accent }) => (
+  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700 transition-colors">
+    <div className="flex items-center justify-between mb-4">
+      <span className="text-3xl">{icon}</span>
+      <span className={`text-sm font-medium ${accent}`}>{title}</span>
+    </div>
+    <div className="text-3xl font-bold text-gray-900 dark:text-slate-100">{toPersianNumber(value)}</div>
+  </div>
+);
 
 const Dashboard = () => {
-  const [recentForms, setRecentForms] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [failures, setFailures] = useState([]);
+  const [delays, setDelays] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+
+  const apiBase = useMemo(() => process.env.REACT_APP_API_URL || 'http://localhost:8000/api', []);
 
   useEffect(() => {
-    loadRecentForms();
+    const load = async () => {
+      try {
+        const [dashboardData, failuresData, notificationsData] = await Promise.all([
+          fetchDashboard(),
+          fetchFailureReports({ per_page: 5 }),
+          fetchNotifications({ status: 'pending' }),
+        ]);
+        const extract = (payload) => payload?.data ?? payload?.data?.data ?? payload ?? [];
+        setStats(dashboardData);
+        setFailures(extract(failuresData));
+        setDelays(extract(notificationsData));
+      } catch (error) {
+        console.error('Dashboard load error', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
   }, []);
 
-  const loadRecentForms = async () => {
-    try {
-      const data = await getRecentForms(10);
-      setRecentForms(data);
-    } catch (err) {
-      console.error('Error loading recent forms:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-12 text-center text-gray-600 dark:text-slate-200">
+        در حال بارگذاری داشبورد...
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
-      {/* Welcome Section */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">
-          خوش آمدید، {user?.username}
-        </h2>
-        <p className="text-gray-600">
-          به سامانه مدیریت تعمیرات معدن خوش آمدید. از منوی بالا می‌توانید به بخش‌های مختلف دسترسی داشته باشید.
-        </p>
-      </div>
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-6">
+        <StatCard title="کل تجهیزات" value={stats?.stats?.equipment_total || 0} icon="⛏️" accent="text-blue-500" />
+        <StatCard title="خرابی‌های باز" value={stats?.stats?.failures_open || 0} icon="🚨" accent="text-red-500" />
+        <StatCard title="درخواست خروج معلق" value={stats?.stats?.exit_pending || 0} icon="📤" accent="text-orange-500" />
+        <StatCard title="تعمیرات جاری" value={stats?.stats?.repair_in_progress || 0} icon="🛠️" accent="text-emerald-500" />
+        <StatCard title="اعلان تأخیر" value={stats?.stats?.delays || 0} icon="⏱️" accent="text-purple-500" />
+      </section>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Link
-          to="/exit-repair"
-          className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
-        >
-          <div className="text-3xl mb-3">📤</div>
-          <h3 className="text-xl font-bold mb-2">ثبت خروج/تعمیر</h3>
-          <p className="text-blue-100">ثبت فرم درخواست خروج و تعمیرات</p>
-        </Link>
-
-        <Link
-          to="/entry-confirm"
-          className="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
-        >
-          <div className="text-3xl mb-3">📥</div>
-          <h3 className="text-xl font-bold mb-2">تأیید ورود</h3>
-          <p className="text-green-100">ثبت تأیید ورود پس از تعمیر</p>
-        </Link>
-
-        <Link
-          to="/statuses"
-          className="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
-        >
-          <div className="text-3xl mb-3">📊</div>
-          <h3 className="text-xl font-bold mb-2">مشاهده وضعیت‌ها</h3>
-          <p className="text-purple-100">نمای کلی از تمام فرم‌ها</p>
-        </Link>
-      </div>
-
-      {/* Recent Forms */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">فرم‌های اخیر</h3>
-        
-        {loading ? (
-          <div className="text-center py-8 text-gray-500">در حال بارگذاری...</div>
-        ) : recentForms.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">هیچ فرمی یافت نشد</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">نوع</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">شماره فرم</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">تاریخ</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">وضعیت</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {recentForms.map((form, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {getFormTypeLabel(form.type)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {toPersianNumber(form.number)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      {toPersianNumber(form.date_shamsi)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`status-badge ${getStatusClass(form.status)}`}>
-                        {form.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">آخرین خرابی‌های ثبت شده</h2>
+            <Link to="/exit-repair" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+              ثبت خرابی جدید
+            </Link>
           </div>
-        )}
-      </div>
+          {failures.length === 0 ? (
+            <p className="text-gray-500 dark:text-slate-300 text-sm">خرابی ثبت شده‌ای وجود ندارد.</p>
+          ) : (
+            <ul className="space-y-3">
+              {failures.map((item) => (
+                <li key={item.id} className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 p-4">
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 dark:text-slate-100">{item.equipment?.name}</p>
+                    <p className="text-sm text-gray-500 dark:text-slate-300 mt-1">{item.description}</p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500 dark:text-slate-400">
+                      <span>شدت: {item.severity}</span>
+                      <span>کد: {item.failure_code}</span>
+                      <span>وضعیت: {translateStatus(item.status)}</span>
+                    </div>
+                  </div>
+                  <span className={`status-badge ${getStatusClass(item.status)}`}>
+                    {translateStatus(item.status)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">اعلان‌های تاخیر</h2>
+            <Link to="/statuses" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+              مشاهده همه اعلان‌ها
+            </Link>
+          </div>
+          {delays.length === 0 ? (
+            <p className="text-gray-500 dark:text-slate-300 text-sm">تاخیری ثبت نشده است.</p>
+          ) : (
+            <ul className="space-y-3">
+              {delays.slice(0, 5).map((delay) => (
+                <li key={delay.id} className="rounded-lg bg-orange-50 dark:bg-orange-500/10 p-4">
+                  <p className="text-sm text-orange-700 dark:text-orange-300">{delay.message}</p>
+                  <div className="mt-2 text-xs text-orange-600 dark:text-orange-200 flex gap-4">
+                    <span>دستگاه: {delay.equipment?.name}</span>
+                    {delay.expected_at && <span>تاریخ مورد انتظار: {toPersianNumber(delay.expected_at)}</span>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <section className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">گزارش عملکرد</h2>
+          <div className="flex gap-3 text-sm">
+            <button
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+              onClick={() => window.open(`${apiBase}/reports/failures/pdf`, '_blank')}
+            >
+              گزارش خرابی PDF
+            </button>
+            <button
+              className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={() => window.open(`${apiBase}/reports/repairs/excel`, '_blank')}
+            >
+              تعمیرات Excel
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600 dark:text-slate-300">
+          {stats?.monthlyFailures?.length ? (
+            stats.monthlyFailures.map((item) => (
+              <div key={item.day} className="flex justify-between p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
+                <span>{toPersianNumber(item.day)}</span>
+                <span className="font-semibold text-gray-900 dark:text-slate-100">{toPersianNumber(item.total)}</span>
+              </div>
+            ))
+          ) : (
+            <p>داده‌ای برای این ماه ثبت نشده است.</p>
+          )}
+        </div>
+      </section>
     </div>
   );
 };

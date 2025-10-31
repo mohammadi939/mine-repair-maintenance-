@@ -1,104 +1,109 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import DatePicker from 'react-multi-date-picker';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
-import { createExitForm, createRepairForm, getUnits, getRecentForms } from '../api';
-import { toPersianNumber, formatJalaliDate, generateFormNumber, validateItemsCount, validateItem } from '../utils';
+import {
+  createExitRequest,
+  createFailureReport,
+  createRepairOrder,
+  fetchExitRequests,
+  getEquipments,
+} from '../api';
+import {
+  formatJalaliDate,
+  generateFormNumber,
+  getStatusClass,
+  translateStatus,
+  toPersianNumber,
+  validateItem,
+  validateItemsCount,
+} from '../utils';
+
+const defaultItem = () => ({ description: '', quantity: '', unit: 'عدد', code: '' });
 
 const ExitRepairForm = () => {
-  const [units, setUnits] = useState([]);
-  const [showRepairForm, setShowRepairForm] = useState(false);
-  const [lastExitFormNo, setLastExitFormNo] = useState('');
-  const [recentForms, setRecentForms] = useState([]);
-  const [message, setMessage] = useState({ type: '', text: '' });
+  const [equipments, setEquipments] = useState([]);
+  const [recentRequests, setRecentRequests] = useState([]);
+  const [message, setMessage] = useState(null);
 
-  // Exit form state
-  const [exitForm, setExitForm] = useState({
-    form_no: generateFormNumber('EXIT'),
-    date_shamsi: null,
-    out_type: '',
-    driver_name: '',
-    reason: '',
-    unit_id: '',
-    items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
+  const [failureForm, setFailureForm] = useState({
+    equipment_id: '',
+    failure_code: '',
+    severity: 'medium',
+    description: '',
   });
 
-  // Repair form state
+  const [exitForm, setExitForm] = useState({
+    equipment_id: '',
+    form_number: generateFormNumber('EXIT'),
+    request_type: 'repair',
+    reason: '',
+    expected_return_at: null,
+    payload: {
+      driver_name: '',
+      items: [defaultItem()],
+    },
+  });
+
   const [repairForm, setRepairForm] = useState({
-    form_no: generateFormNumber('REPAIR'),
-    date_shamsi: null,
-    description: '',
-    reference_exit_form_no: '',
-    unit_id: '',
-    items: [],
+    exit_request_id: '',
+    form_number: generateFormNumber('REP'),
+    started_at: null,
+    completed_at: null,
+    actions_note: '',
+    materials_note: '',
+    status: 'in_progress',
   });
 
   useEffect(() => {
-    loadUnits();
-    loadRecentForms();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const init = async () => {
+      try {
+        const [equipmentList, exitRequests] = await Promise.all([
+          getEquipments({ per_page: 50 }),
+          fetchExitRequests({ per_page: 5 }),
+        ]);
+        const equipmentData = equipmentList?.data ?? equipmentList;
+        setEquipments(equipmentData);
+        const exitData = exitRequests?.data ?? exitRequests;
+        setRecentRequests(exitData);
+        if (equipmentData?.length) {
+          const firstId = equipmentData[0]?.id;
+          setFailureForm((prev) => ({ ...prev, equipment_id: firstId }));
+          setExitForm((prev) => ({ ...prev, equipment_id: firstId }));
+        }
+        if (exitData?.length) {
+          setRepairForm((prev) => ({ ...prev, exit_request_id: exitData[0].id }));
+        }
+      } catch (error) {
+        console.error('init workflow error', error);
+      }
+    };
+    init();
   }, []);
 
-  const loadUnits = async () => {
-    try {
-      const data = await getUnits();
-      setUnits(data);
-      if (data.length > 0 && !exitForm.unit_id) {
-        setExitForm((prev) => ({ ...prev, unit_id: data[0].id }));
-      }
-    } catch (err) {
-      console.error('Error loading units:', err);
-    }
-  };
-
-  const loadRecentForms = async () => {
-    try {
-      const data = await getRecentForms(5);
-      setRecentForms(data);
-    } catch (err) {
-      console.error('Error loading recent forms:', err);
-    }
-  };
-
-  // Exit form handlers
-  const handleExitFormChange = (field, value) => {
-    setExitForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleExitItemChange = (index, field, value) => {
-    const newItems = [...exitForm.items];
-    newItems[index][field] = value;
-    setExitForm((prev) => ({ ...prev, items: newItems }));
-  };
-
-  const addExitItem = () => {
-    if (exitForm.items.length < 5) {
-      setExitForm((prev) => ({
-        ...prev,
-        items: [...prev.items, { description: '', code: '', quantity: '', unit: 'عدد' }],
-      }));
-    }
-  };
-
-  const removeExitItem = (index) => {
-    if (exitForm.items.length > 1) {
-      const newItems = exitForm.items.filter((_, i) => i !== index);
-      setExitForm((prev) => ({ ...prev, items: newItems }));
-    }
-  };
-
-  const handleExitFormSubmit = async (e) => {
+  const handleFailureSubmit = async (e) => {
     e.preventDefault();
-    setMessage({ type: '', text: '' });
+    setMessage(null);
+    try {
+      await createFailureReport(failureForm);
+      setMessage({ type: 'success', text: 'گزارش خرابی با موفقیت ثبت شد.' });
+      setFailureForm((prev) => ({ ...prev, failure_code: '', description: '' }));
+    } catch (error) {
+      setMessage({ type: 'error', text: error.response?.data?.message || 'ثبت گزارش خرابی ناموفق بود.' });
+    }
+  };
 
-    // Validation
-    const itemsError = validateItemsCount(exitForm.items, 1, 5);
+  const handleExitSubmit = async (e) => {
+    e.preventDefault();
+    setMessage(null);
+
+    const itemsError = validateItemsCount(exitForm.payload.items, 1, 5);
     if (itemsError) {
       setMessage({ type: 'error', text: itemsError });
       return;
     }
 
-    for (const item of exitForm.items) {
+    for (const item of exitForm.payload.items) {
       const itemError = validateItem(item);
       if (itemError) {
         setMessage({ type: 'error', text: itemError });
@@ -106,523 +111,443 @@ const ExitRepairForm = () => {
       }
     }
 
-    if (!exitForm.date_shamsi) {
-      setMessage({ type: 'error', text: 'تاریخ الزامی است' });
-      return;
-    }
-
     try {
-      const data = {
-        ...exitForm,
-        date_shamsi: formatJalaliDate(exitForm.date_shamsi),
+      const payload = {
+        equipment_id: exitForm.equipment_id,
+        form_number: exitForm.form_number,
+        request_type: exitForm.request_type,
+        reason: exitForm.reason,
+        expected_return_at: exitForm.expected_return_at
+          ? formatJalaliDate(exitForm.expected_return_at)
+          : null,
+        payload: exitForm.payload,
       };
-
-      const response = await createExitForm(data);
-      setMessage({ type: 'success', text: 'فرم خروج با موفقیت ثبت شد' });
-      setLastExitFormNo(response.form_no);
-      setShowRepairForm(true);
-      setRepairForm((prev) => ({
-        ...prev,
-        reference_exit_form_no: response.form_no,
-        unit_id: exitForm.unit_id,
-      }));
-      loadRecentForms();
-    } catch (err) {
-      setMessage({ type: 'error', text: err.response?.data?.error || 'خطا در ثبت فرم خروج' });
-    }
-  };
-
-  // Repair form handlers
-  const handleRepairFormChange = (field, value) => {
-    setRepairForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleRepairItemChange = (index, field, value) => {
-    const newItems = [...repairForm.items];
-    newItems[index][field] = value;
-    setRepairForm((prev) => ({ ...prev, items: newItems }));
-  };
-
-  const addRepairItem = () => {
-    setRepairForm((prev) => ({
-      ...prev,
-      items: [...prev.items, { description: '', code: '', quantity: '', unit: 'عدد' }],
-    }));
-  };
-
-  const removeRepairItem = (index) => {
-    const newItems = repairForm.items.filter((_, i) => i !== index);
-    setRepairForm((prev) => ({ ...prev, items: newItems }));
-  };
-
-  const handleRepairFormSubmit = async (e) => {
-    e.preventDefault();
-    setMessage({ type: '', text: '' });
-
-    if (!repairForm.date_shamsi) {
-      setMessage({ type: 'error', text: 'تاریخ الزامی است' });
-      return;
-    }
-
-    // Validate items if provided
-    if (repairForm.items.length > 0) {
-      for (const item of repairForm.items) {
-        const itemError = validateItem(item);
-        if (itemError) {
-          setMessage({ type: 'error', text: itemError });
-          return;
-        }
-      }
-    }
-
-    try {
-      const data = {
-        ...repairForm,
-        date_shamsi: formatJalaliDate(repairForm.date_shamsi),
-      };
-
-      await createRepairForm(data);
-      setMessage({ type: 'success', text: 'فرم تعمیر با موفقیت ثبت شد' });
-      
-      // Reset forms
+      const response = await createExitRequest(payload);
+      setMessage({ type: 'success', text: 'درخواست خروج با موفقیت ثبت شد.' });
       setExitForm({
-        form_no: generateFormNumber('EXIT'),
-        date_shamsi: null,
-        out_type: '',
-        driver_name: '',
+        equipment_id: exitForm.equipment_id,
+        form_number: generateFormNumber('EXIT'),
+        request_type: 'repair',
         reason: '',
-        unit_id: units[0]?.id || '',
-        items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
+        expected_return_at: null,
+        payload: { driver_name: '', items: [defaultItem()] },
       });
-      setRepairForm({
-        form_no: generateFormNumber('REPAIR'),
-        date_shamsi: null,
-        description: '',
-        reference_exit_form_no: '',
-        unit_id: '',
-        items: [],
-      });
-      setShowRepairForm(false);
-      loadRecentForms();
-    } catch (err) {
-      setMessage({ type: 'error', text: err.response?.data?.error || 'خطا در ثبت فرم تعمیر' });
+      setRecentRequests((prev) => [response, ...prev].slice(0, 5));
+      setRepairForm((prev) => ({ ...prev, exit_request_id: response.id }));
+    } catch (error) {
+      setMessage({ type: 'error', text: error.response?.data?.message || 'ثبت درخواست خروج ناموفق بود.' });
     }
   };
 
-  const unitOptions = ['عدد', 'حلقه', 'لاستیک', 'متر', 'کیلوگرم', 'لیتر', 'دستگاه'];
+  const handleRepairSubmit = async (e) => {
+    e.preventDefault();
+    setMessage(null);
+    if (!repairForm.exit_request_id) {
+      setMessage({ type: 'error', text: 'انتخاب درخواست خروج الزامی است.' });
+      return;
+    }
+
+    try {
+      const payload = {
+        exit_request_id: repairForm.exit_request_id,
+        form_number: repairForm.form_number,
+        status: repairForm.status,
+        started_at: repairForm.started_at ? formatJalaliDate(repairForm.started_at) : null,
+        completed_at: repairForm.completed_at ? formatJalaliDate(repairForm.completed_at) : null,
+        actions: repairForm.actions_note
+          ? repairForm.actions_note.split('\n').filter(Boolean).map((item) => ({ description: item }))
+          : [],
+        materials: repairForm.materials_note
+          ? repairForm.materials_note.split('\n').filter(Boolean).map((item) => ({ description: item }))
+          : [],
+      };
+      await createRepairOrder(payload);
+      setMessage({ type: 'success', text: 'گزارش تعمیر با موفقیت ذخیره شد.' });
+      setRepairForm({
+        exit_request_id: repairForm.exit_request_id,
+        form_number: generateFormNumber('REP'),
+        started_at: null,
+        completed_at: null,
+        actions_note: '',
+        materials_note: '',
+        status: 'completed',
+      });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.response?.data?.message || 'ثبت تعمیر ناموفق بود.' });
+    }
+  };
+
+  const selectedEquipment = useMemo(
+    () => equipments.find((eq) => eq.id === exitForm.equipment_id) || {},
+    [equipments, exitForm.equipment_id]
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">ثبت فرم خروج و تعمیر</h2>
-
-        {message.text && (
-          <div
-            className={`mb-6 p-4 rounded-lg ${
-              message.type === 'success'
-                ? 'bg-green-50 border border-green-200 text-green-800'
-                : 'bg-red-50 border border-red-200 text-red-800'
-            }`}
-          >
-            {message.text}
+    <div className="space-y-8">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-6">گزارش خرابی</h2>
+        <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleFailureSubmit}>
+          <div>
+            <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">تجهیز</label>
+            <select
+              value={failureForm.equipment_id}
+              onChange={(e) => setFailureForm({ ...failureForm, equipment_id: Number(e.target.value) })}
+              className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+            >
+              {equipments.map((eq) => (
+                <option key={eq.id} value={eq.id}>
+                  {eq.name}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
-
-        {/* Exit Form */}
-        {!showRepairForm && (
-          <form onSubmit={handleExitFormSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  شماره فرم <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={toPersianNumber(exitForm.form_no)}
-                  onChange={(e) => handleExitFormChange('form_no', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  تاریخ <span className="text-red-500">*</span>
-                </label>
-                <DatePicker
-                  value={exitForm.date_shamsi}
-                  onChange={(date) => handleExitFormChange('date_shamsi', date)}
-                  calendar={persian}
-                  locale={persian_fa}
-                  format="YYYY/MM/DD"
-                  inputClass="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  containerClassName="w-full"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">واحد</label>
-                <select
-                  value={exitForm.unit_id}
-                  onChange={(e) => handleExitFormChange('unit_id', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  {units.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">نوع خروج</label>
-                <input
-                  type="text"
-                  value={exitForm.out_type}
-                  onChange={(e) => handleExitFormChange('out_type', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">نام راننده</label>
-                <input
-                  type="text"
-                  value={exitForm.driver_name}
-                  onChange={(e) => handleExitFormChange('driver_name', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">دلیل خروج</label>
-                <input
-                  type="text"
-                  value={exitForm.reason}
-                  onChange={(e) => handleExitFormChange('reason', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Items Table */}
-            <div>
-              <div className="flex justify-between items-center mb-4">
-                <label className="block text-sm font-medium text-gray-700">
-                  اقلام (حداقل ۱، حداکثر ۵) <span className="text-red-500">*</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={addExitItem}
-                  disabled={exitForm.items.length >= 5}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
-                >
-                  + افزودن ردیف
-                </button>
-              </div>
-
-              <div className="overflow-x-auto border border-gray-300 rounded-lg">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase w-8">#</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                        شرح کالا <span className="text-red-500">*</span>
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">کد کالا</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                        تعداد <span className="text-red-500">*</span>
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                        واحد <span className="text-red-500">*</span>
-                      </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase w-20">عملیات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {exitForm.items.map((item, index) => (
-                      <tr key={index}>
-                        <td className="px-4 py-3 text-sm text-gray-700">{toPersianNumber(index + 1)}</td>
-                        <td className="px-4 py-3">
-                          <input
-                            type="text"
-                            value={item.description}
-                            onChange={(e) => handleExitItemChange(index, 'description', e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            required
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <input
-                            type="text"
-                            value={item.code}
-                            onChange={(e) => handleExitItemChange(index, 'code', e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={item.quantity}
-                            onChange={(e) => handleExitItemChange(index, 'quantity', e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            required
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <select
-                            value={item.unit}
-                            onChange={(e) => handleExitItemChange(index, 'unit', e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            required
-                          >
-                            {unitOptions.map((unit) => (
-                              <option key={unit} value={unit}>
-                                {unit}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => removeExitItem(index)}
-                            disabled={exitForm.items.length === 1}
-                            className="text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed"
-                          >
-                            🗑️
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
-              >
-                ذخیره و ادامه به فرم تعمیر
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Repair Form */}
-        {showRepairForm && (
-          <form onSubmit={handleRepairFormSubmit} className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
-              <p className="text-blue-800">
-                <span className="font-medium">فرم خروج ثبت شد.</span> شماره فرم: {toPersianNumber(lastExitFormNo)}
-              </p>
-              <p className="text-blue-700 text-sm mt-1">اکنون فرم تعمیر را تکمیل کنید.</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  شماره فرم تعمیر <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={toPersianNumber(repairForm.form_no)}
-                  onChange={(e) => handleRepairFormChange('form_no', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  تاریخ <span className="text-red-500">*</span>
-                </label>
-                <DatePicker
-                  value={repairForm.date_shamsi}
-                  onChange={(date) => handleRepairFormChange('date_shamsi', date)}
-                  calendar={persian}
-                  locale={persian_fa}
-                  format="YYYY/MM/DD"
-                  inputClass="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  containerClassName="w-full"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">شماره فرم خروج مرجع</label>
-                <input
-                  type="text"
-                  value={toPersianNumber(repairForm.reference_exit_form_no)}
-                  onChange={(e) => handleRepairFormChange('reference_exit_form_no', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                  readOnly
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">شرح مشکل</label>
-                <input
-                  type="text"
-                  value={repairForm.description}
-                  onChange={(e) => handleRepairFormChange('description', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Optional items */}
-            <div>
-              <div className="flex justify-between items-center mb-4">
-                <label className="block text-sm font-medium text-gray-700">اقلام (اختیاری)</label>
-                <button
-                  type="button"
-                  onClick={addRepairItem}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                >
-                  + افزودن ردیف
-                </button>
-              </div>
-
-              {repairForm.items.length > 0 && (
-                <div className="overflow-x-auto border border-gray-300 rounded-lg">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase w-8">#</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">شرح کالا</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">کد کالا</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">تعداد</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">واحد</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase w-20">عملیات</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {repairForm.items.map((item, index) => (
-                        <tr key={index}>
-                          <td className="px-4 py-3 text-sm text-gray-700">{toPersianNumber(index + 1)}</td>
-                          <td className="px-4 py-3">
-                            <input
-                              type="text"
-                              value={item.description}
-                              onChange={(e) => handleRepairItemChange(index, 'description', e.target.value)}
-                              className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              type="text"
-                              value={item.code}
-                              onChange={(e) => handleRepairItemChange(index, 'code', e.target.value)}
-                              className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={item.quantity}
-                              onChange={(e) => handleRepairItemChange(index, 'quantity', e.target.value)}
-                              className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <select
-                              value={item.unit}
-                              onChange={(e) => handleRepairItemChange(index, 'unit', e.target.value)}
-                              className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            >
-                              {unitOptions.map((unit) => (
-                                <option key={unit} value={unit}>
-                                  {unit}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <button
-                              type="button"
-                              onClick={() => removeRepairItem(index)}
-                              className="text-red-600 hover:text-red-800"
-                            >
-                              🗑️
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-between">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowRepairForm(false);
-                  setExitForm({
-                    form_no: generateFormNumber('EXIT'),
-                    date_shamsi: null,
-                    out_type: '',
-                    driver_name: '',
-                    reason: '',
-                    unit_id: units[0]?.id || '',
-                    items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
-                  });
-                }}
-                className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
-              >
-                بازگشت به فرم خروج
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
-              >
-                ذخیره فرم تعمیر
-              </button>
-            </div>
-          </form>
-        )}
+          <div>
+            <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">کد خرابی</label>
+            <input
+              value={failureForm.failure_code}
+              onChange={(e) => setFailureForm({ ...failureForm, failure_code: e.target.value })}
+              className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">شدت</label>
+            <select
+              value={failureForm.severity}
+              onChange={(e) => setFailureForm({ ...failureForm, severity: e.target.value })}
+              className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+            >
+              <option value="low">کم</option>
+              <option value="medium">متوسط</option>
+              <option value="high">زیاد</option>
+              <option value="critical">بحرانی</option>
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">توضیحات</label>
+            <textarea
+              value={failureForm.description}
+              onChange={(e) => setFailureForm({ ...failureForm, description: e.target.value })}
+              rows={3}
+              className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              required
+            />
+          </div>
+          <div className="md:col-span-2 flex justify-end">
+            <button type="submit" className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              ثبت گزارش خرابی
+            </button>
+          </div>
+        </form>
       </div>
 
-      {/* Recent Forms */}
-      {!showRepairForm && recentForms.length > 0 && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">فرم‌های اخیر</h3>
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-6">درخواست خروج تجهیز</h2>
+        <form className="space-y-4" onSubmit={handleExitSubmit}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">تجهیز</label>
+              <select
+                value={exitForm.equipment_id}
+                onChange={(e) => setExitForm({ ...exitForm, equipment_id: Number(e.target.value) })}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              >
+                {equipments.map((eq) => (
+                  <option key={eq.id} value={eq.id}>
+                    {eq.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">شماره فرم</label>
+              <input
+                value={exitForm.form_number}
+                onChange={(e) => setExitForm({ ...exitForm, form_number: e.target.value })}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">نوع خروج</label>
+              <select
+                value={exitForm.request_type}
+                onChange={(e) => setExitForm({ ...exitForm, request_type: e.target.value })}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              >
+                <option value="repair">تعمیر</option>
+                <option value="inspection">بازرسی</option>
+                <option value="external">خارج از سایت</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">تاریخ بازگشت مورد انتظار</label>
+              <DatePicker
+                value={exitForm.expected_return_at}
+                onChange={(value) => setExitForm({ ...exitForm, expected_return_at: value })}
+                calendar={persian}
+                locale={persian_fa}
+                className="w-full"
+                format="YYYY/MM/DD"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">راننده / مسئول</label>
+              <input
+                value={exitForm.payload.driver_name}
+                onChange={(e) =>
+                  setExitForm((prev) => ({
+                    ...prev,
+                    payload: { ...prev.payload, driver_name: e.target.value },
+                  }))
+                }
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">واحد درخواست کننده</label>
+              <input
+                value={selectedEquipment.unit?.name || ''}
+                disabled
+                className="w-full border rounded-lg px-4 py-2 bg-gray-100 dark:bg-slate-900/50 dark:border-slate-700"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">شرح خروج</label>
+            <textarea
+              value={exitForm.reason}
+              onChange={(e) => setExitForm({ ...exitForm, reason: e.target.value })}
+              rows={3}
+              className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              required
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-200">اقلام همراه</h3>
+              <button
+                type="button"
+                onClick={() =>
+                  setExitForm((prev) => ({
+                    ...prev,
+                    payload: {
+                      ...prev.payload,
+                      items: [...prev.payload.items, defaultItem()],
+                    },
+                  }))
+                }
+                className="text-sm text-blue-600 dark:text-blue-400"
+              >
+                افزودن قلم
+              </button>
+            </div>
+            <div className="space-y-3">
+              {exitForm.payload.items.map((item, index) => (
+                <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <input
+                    placeholder="شرح"
+                    value={item.description}
+                    onChange={(e) => {
+                      const items = [...exitForm.payload.items];
+                      items[index].description = e.target.value;
+                      setExitForm((prev) => ({ ...prev, payload: { ...prev.payload, items } }));
+                    }}
+                    className="border rounded-lg px-3 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+                  />
+                  <input
+                    placeholder="کد"
+                    value={item.code}
+                    onChange={(e) => {
+                      const items = [...exitForm.payload.items];
+                      items[index].code = e.target.value;
+                      setExitForm((prev) => ({ ...prev, payload: { ...prev.payload, items } }));
+                    }}
+                    className="border rounded-lg px-3 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+                  />
+                  <input
+                    placeholder="تعداد"
+                    type="number"
+                    value={item.quantity}
+                    onChange={(e) => {
+                      const items = [...exitForm.payload.items];
+                      items[index].quantity = e.target.value;
+                      setExitForm((prev) => ({ ...prev, payload: { ...prev.payload, items } }));
+                    }}
+                    className="border rounded-lg px-3 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      placeholder="واحد"
+                      value={item.unit}
+                      onChange={(e) => {
+                        const items = [...exitForm.payload.items];
+                        items[index].unit = e.target.value;
+                        setExitForm((prev) => ({ ...prev, payload: { ...prev.payload, items } }));
+                      }}
+                      className="flex-1 border rounded-lg px-3 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+                    />
+                    {exitForm.payload.items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExitForm((prev) => ({
+                            ...prev,
+                            payload: {
+                              ...prev.payload,
+                              items: prev.payload.items.filter((_, i) => i !== index),
+                            },
+                          }));
+                        }}
+                        className="px-3 py-2 bg-red-500 text-white rounded-lg"
+                      >
+                        حذف
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button type="submit" className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
+              ثبت درخواست خروج
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-6">ثبت گزارش تعمیر</h2>
+        <form className="space-y-4" onSubmit={handleRepairSubmit}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">درخواست خروج مرتبط</label>
+              <select
+                value={repairForm.exit_request_id}
+                onChange={(e) => setRepairForm({ ...repairForm, exit_request_id: Number(e.target.value) })}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              >
+                <option value="">انتخاب کنید</option>
+                {recentRequests.map((req) => (
+                  <option key={req.id} value={req.id}>
+                    {req.form_number} - {req.equipment?.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">شماره فرم تعمیر</label>
+              <input
+                value={repairForm.form_number}
+                onChange={(e) => setRepairForm({ ...repairForm, form_number: e.target.value })}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">تاریخ شروع</label>
+              <DatePicker
+                value={repairForm.started_at}
+                onChange={(value) => setRepairForm({ ...repairForm, started_at: value })}
+                calendar={persian}
+                locale={persian_fa}
+                className="w-full"
+                format="YYYY/MM/DD"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">تاریخ پایان</label>
+              <DatePicker
+                value={repairForm.completed_at}
+                onChange={(value) => setRepairForm({ ...repairForm, completed_at: value })}
+                calendar={persian}
+                locale={persian_fa}
+                className="w-full"
+                format="YYYY/MM/DD"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">اقدامات انجام شده (هر مورد در یک خط)</label>
+              <textarea
+                value={repairForm.actions_note}
+                onChange={(e) => setRepairForm({ ...repairForm, actions_note: e.target.value })}
+                rows={4}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-slate-300 mb-2">قطعات/مصرفی (هر مورد در یک خط)</label>
+              <textarea
+                value={repairForm.materials_note}
+                onChange={(e) => setRepairForm({ ...repairForm, materials_note: e.target.value })}
+                rows={4}
+                className="w-full border rounded-lg px-4 py-2 bg-white dark:bg-slate-900 dark:border-slate-700"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button type="submit" className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+              ثبت گزارش تعمیر
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {message && (
+        <div
+          className={`rounded-lg px-4 py-3 text-sm font-medium ${
+            message.type === 'success'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6 border border-slate-100 dark:border-slate-700">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-4">درخواست‌های اخیر</h2>
+        {recentRequests.length === 0 ? (
+          <p className="text-gray-500 dark:text-slate-300 text-sm">درخواستی ثبت نشده است.</p>
+        ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-sm">
+              <thead className="bg-gray-50 dark:bg-slate-900">
                 <tr>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">نوع</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">شماره</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">تاریخ</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">وضعیت</th>
+                  <th className="px-4 py-2 text-right">شماره فرم</th>
+                  <th className="px-4 py-2 text-right">تجهیز</th>
+                  <th className="px-4 py-2 text-right">وضعیت</th>
+                  <th className="px-4 py-2 text-right">بازگشت مورد انتظار</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {recentForms.map((form, index) => (
-                  <tr key={index}>
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      {form.type === 'exit' ? 'خروج' : 'تعمیر'}
+              <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                {recentRequests.map((req) => (
+                  <tr key={req.id}>
+                    <td className="px-4 py-2 font-semibold text-gray-900 dark:text-slate-100">
+                      {toPersianNumber(req.form_number)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-700">{toPersianNumber(form.number)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700">{toPersianNumber(form.date_shamsi)}</td>
-                    <td className="px-6 py-4">
-                      <span className={`status-badge ${form.status === 'در حال ارسال' ? 'status-sending' : 'status-repairing'}`}>
-                        {form.status}
+                    <td className="px-4 py-2 text-gray-600 dark:text-slate-300">{req.equipment?.name}</td>
+                    <td className="px-4 py-2">
+                      <span className={`status-badge ${getStatusClass(req.status)}`}>
+                        {translateStatus(req.status)}
                       </span>
+                    </td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-slate-300">
+                      {req.expected_return_at ? toPersianNumber(req.expected_return_at) : '-'}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

@@ -18,10 +18,10 @@ const Login = () => {
 
     try {
       const data = await login(username, password);
-      loginUser(data.token, data.user);
+      loginUser({ token: data.access_token, userData: data.user });
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.error || 'خطا در ورود به سیستم');
+      setError(err.response?.data?.message || 'خطا در ورود به سیستم');
     } finally {
       setLoading(false);
     }
@@ -86,9 +86,9 @@ const Login = () => {
         <div className="mt-6 text-center text-sm text-gray-600">
           <p>حساب پیش‌فرض:</p>
           <p className="mt-1">
-            <span className="font-medium">نام کاربری:</span> admin{' '}
+            <span className="font-medium">نام کاربری:</span> manager{' '}
             <span className="mx-2">|</span>
-            <span className="font-medium">رمز عبور:</span> admin123
+            <span className="font-medium">رمز عبور:</span> password
           </p>
         </div>
       </div>
