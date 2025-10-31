@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\HandlesPagination;
 use App\Http\Requests\ReEntryApprovalRequest;
 use App\Models\ReEntryApproval;
 use App\Services\TimelineService;
@@ -11,6 +12,8 @@ use Illuminate\Support\Carbon;
 
 class ReEntryApprovalController extends Controller
 {
+    use HandlesPagination;
+
     public function __construct(private TimelineService $timelineService)
     {
     }
@@ -23,7 +26,7 @@ class ReEntryApprovalController extends Controller
             $query->where('status', $request->input('status'));
         }
 
-        return response()->json($query->paginate(15));
+        return response()->json($query->paginate($this->resolvePerPage($request)));
     }
 
     public function store(ReEntryApprovalRequest $request): JsonResponse

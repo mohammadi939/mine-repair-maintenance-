@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\HandlesPagination;
 use App\Http\Requests\RepairOrderStoreRequest;
 use App\Models\RepairOrder;
 use App\Services\TimelineService;
@@ -10,6 +11,8 @@ use Illuminate\Http\Request;
 
 class RepairOrderController extends Controller
 {
+    use HandlesPagination;
+
     public function __construct(private TimelineService $timelineService)
     {
     }
@@ -26,7 +29,7 @@ class RepairOrderController extends Controller
             $query->whereHas('exitRequest.equipment', fn($q) => $q->where('unit_id', $request->integer('unit_id')));
         }
 
-        return response()->json($query->paginate(15));
+        return response()->json($query->paginate($this->resolvePerPage($request)));
     }
 
     public function store(RepairOrderStoreRequest $request): JsonResponse

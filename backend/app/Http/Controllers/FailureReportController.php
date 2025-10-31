@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\HandlesPagination;
 use App\Http\Requests\FailureReportRequest;
 use App\Models\FailureReport;
 use App\Services\TimelineService;
@@ -10,6 +11,8 @@ use Illuminate\Http\Request;
 
 class FailureReportController extends Controller
 {
+    use HandlesPagination;
+
     public function __construct(private TimelineService $timelineService)
     {
     }
@@ -30,7 +33,7 @@ class FailureReportController extends Controller
             $query->where('severity', $request->input('severity'));
         }
 
-        return response()->json($query->paginate(15));
+        return response()->json($query->paginate($this->resolvePerPage($request)));
     }
 
     public function store(FailureReportRequest $request): JsonResponse
