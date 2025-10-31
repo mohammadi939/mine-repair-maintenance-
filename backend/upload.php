@@ -36,12 +36,92 @@ function getAuthToken() {
 
 function validateToken($db, $token) {
     $stmt = $db->prepare("
-        SELECT u.* FROM users u 
-        JOIN tokens t ON t.user_id = u.id 
+        SELECT u.* FROM users u
+        JOIN tokens t ON t.user_id = u.id
         WHERE t.token = ? AND t.expires_at > datetime('now')
     ");
     $stmt->execute([$token]);
     return $stmt->fetch();
+}
+
+function canAccessUnit($user, $unitId) {
+    if ($unitId === null) {
+        return true;
+    }
+    if ($user['role'] === 'manager' || $user['role'] === 'storekeeper') {
+        return true;
+    }
+    if ($user['role'] === 'unit' && $user['unit_id'] == $unitId) {
+        return true;
+    }
+    return false;
+}
+
+function resolveUnitId($db, $entityType, $entityId) {
+    switch ($entityType) {
+        case 'exit_form':
+            $stmt = $db->prepare("SELECT unit_id FROM exit_forms WHERE id = ?");
+            $stmt->execute([$entityId]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                sendError('فرم خروج مورد نظر یافت نشد', 404);
+            }
+            return $row['unit_id'] ?? null;
+        case 'repair_form':
+            $stmt = $db->prepare("
+                SELECT 
+                    rf.unit_id,
+                    ef.unit_id AS reference_exit_unit_id
+                FROM repair_forms rf
+                LEFT JOIN exit_forms ef ON ef.id = rf.reference_exit_form_id
+                WHERE rf.id = ?
+            ");
+            $stmt->execute([$entityId]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                sendError('فرم تعمیر مورد نظر یافت نشد', 404);
+            }
+            if ($row && array_key_exists('unit_id', $row) && $row['unit_id'] !== null) {
+                return $row['unit_id'];
+            }
+            return $row['reference_exit_unit_id'] ?? null;
+        case 'entry_confirm':
+            $stmt = $db->prepare("
+                SELECT 
+                    ec.reference_exit_form_id,
+                    ec.reference_repair_form_id,
+                    direct_exit.unit_id AS direct_exit_unit_id,
+                    rf.unit_id AS repair_unit_id,
+                    repair_exit.unit_id AS repair_exit_unit_id
+                FROM entry_confirms ec
+                LEFT JOIN exit_forms direct_exit ON direct_exit.id = ec.reference_exit_form_id
+                LEFT JOIN repair_forms rf ON rf.id = ec.reference_repair_form_id
+                LEFT JOIN exit_forms repair_exit ON repair_exit.id = rf.reference_exit_form_id
+                WHERE ec.id = ?
+            ");
+            $stmt->execute([$entityId]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                sendError('تأییدیه ورود مورد نظر یافت نشد', 404);
+            }
+            if ($row && array_key_exists('direct_exit_unit_id', $row) && $row['direct_exit_unit_id'] !== null) {
+                return $row['direct_exit_unit_id'];
+            }
+            if ($row && array_key_exists('repair_unit_id', $row) && $row['repair_unit_id'] !== null) {
+                return $row['repair_unit_id'];
+            }
+            return $row['repair_exit_unit_id'] ?? null;
+        case 'equipment':
+            $stmt = $db->prepare("SELECT unit_id FROM equipment WHERE id = ?");
+            $stmt->execute([$entityId]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                sendError('تجهیز مورد نظر یافت نشد', 404);
+            }
+            return $row['unit_id'] ?? null;
+        default:
+            return null;
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -79,6 +159,11 @@ if (!$entityType || !$entityId) {
 $allowedTypes = ['exit_form', 'repair_form', 'entry_confirm', 'equipment'];
 if (!in_array($entityType, $allowedTypes)) {
     sendError('نوع موجودیت نامعتبر است');
+}
+
+$unitId = resolveUnitId($db, $entityType, $entityId);
+if (!canAccessUnit($user, $unitId)) {
+    sendError('شما مجاز به دسترسی به این موجودیت نیستید', 403);
 }
 
 $file = $_FILES['file'];
