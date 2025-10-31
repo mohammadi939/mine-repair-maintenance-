@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\HandlesPagination;
 use App\Http\Requests\ExitRequestStoreRequest;
 use App\Models\ExitRequest;
 use App\Services\DelayNotificationService;
@@ -11,6 +12,8 @@ use Illuminate\Http\Request;
 
 class ExitRequestController extends Controller
 {
+    use HandlesPagination;
+
     public function __construct(
         private TimelineService $timelineService,
         private DelayNotificationService $delayNotificationService
@@ -29,7 +32,7 @@ class ExitRequestController extends Controller
             $query->whereHas('equipment', fn($q) => $q->where('unit_id', $request->integer('unit_id')));
         }
 
-        return response()->json($query->paginate(15));
+        return response()->json($query->paginate($this->resolvePerPage($request)));
     }
 
     public function store(ExitRequestStoreRequest $request): JsonResponse

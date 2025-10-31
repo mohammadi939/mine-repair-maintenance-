@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\HandlesPagination;
 use App\Models\Equipment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -10,6 +11,8 @@ use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class EquipmentController extends Controller
 {
+    use HandlesPagination;
+
     public function index(Request $request): JsonResponse
     {
         $query = Equipment::with('unit');
@@ -22,7 +25,7 @@ class EquipmentController extends Controller
             $query->where('status', $request->input('status'));
         }
 
-        $equipments = $query->paginate(15);
+        $equipments = $query->paginate($this->resolvePerPage($request));
 
         return response()->json($equipments);
     }
