@@ -7,6 +7,7 @@ use App\Models\ReEntryApproval;
 use App\Services\TimelineService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 class ReEntryApprovalController extends Controller
 {
@@ -29,17 +30,47 @@ class ReEntryApprovalController extends Controller
     {
         $data = $request->validated();
         $data['approved_by'] = auth()->id();
-        $data['approved_at'] = $data['approved_at'] ?? now();
+        $data['approved_at'] = $data['approved_at'] ? Carbon::parse($data['approved_at']) : now();
 
-        $approval = ReEntryApproval::create($data);
+        $approval = ReEntryApproval::create($data)->load(['repairOrder.exitRequest', 'approver']);
 
-        $this->timelineService->record(
-            $approval->repairOrder->exitRequest->equipment_id,
-            'reentry_checked',
-            __('بازگشت تجهیز بررسی شد'),
-            $approval->inspection_notes,
-            ['reentry_approval_id' => $approval->id]
-        );
+        $repairOrder = $approval->repairOrder;
+        $exitRequest = $repairOrder?->exitRequest;
+
+        if ($repairOrder && $approval->status === 'approved') {
+            $repairOrder->update(array_filter([
+                'status' => 'returned',
+                'completed_at' => $repairOrder->completed_at ?? $approval->approved_at,
+            ]));
+
+            if ($exitRequest) {
+                $exitRequest->update(array_filter([
+                    'status' => 'completed',
+                    'approved_at' => $exitRequest->approved_at ?? $approval->approved_at,
+                ]));
+            }
+        }
+
+        $equipmentId = $exitRequest?->equipment_id;
+
+        if ($equipmentId) {
+            $statusLabel = match ($approval->status) {
+                'approved' => __('تایید شد'),
+                'rejected' => __('رد شد'),
+                default => __('در انتظار بررسی'),
+            };
+
+            $this->timelineService->record(
+                $equipmentId,
+                $approval->status === 'approved' ? 'reentry_confirmed' : 'reentry_checked',
+                __('بازگشت تجهیز بررسی شد - وضعیت: :status', ['status' => $statusLabel]),
+                $approval->inspection_notes,
+                [
+                    'reentry_approval_id' => $approval->id,
+                    'status' => $approval->status,
+                ]
+            );
+        }
 
         return response()->json($approval->load(['repairOrder.exitRequest.equipment', 'approver']), 201);
     }
