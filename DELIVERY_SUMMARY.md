@@ -5,13 +5,13 @@
 
 ---
 
-## 📁 فایل تحویلی / Deliverable File
+## 📁 فایل تحویلی / Deliverable Packaging
 
-**نام فایل / Filename:** `CMMS-Mine-Maintenance-System.zip`  
-**مسیر / Location:** `/workspace/CMMS-Mine-Maintenance-System.zip`  
-**حجم / Size:** 69 KB (فشرده / compressed)  
-**تعداد فایل‌ها / Files:** 42 files  
-**وضعیت / Status:** ✅ آماده استفاده / Ready to use
+هیچ فایل باینری از پیش ساخته‌شده‌ای در مخزن نگه‌داری نمی‌شود. برای دریافت بستهٔ قابل تحویل از نسخه فعلی پروژه، یک فایل ZIP تازه بسازید:
+
+1. سرور PHP را در پوشه `backend` اجرا کنید (`php -S localhost:8000`).
+2. آدرس `http://localhost:8000/download_zip.php` را باز کنید تا فایل `CMMS-Mine-Maintenance-System.zip` در لحظه ایجاد و دانلود شود.
+3. یا در صورت نیاز، با دستور `zip -r` در ریشه پروژه بسته را به صورت دستی بسازید.
 
 ---
 
@@ -57,8 +57,11 @@
 
 ## 🚀 دستورالعمل راه‌اندازی سریع / Quick Start Instructions
 
-### گام 1: استخراج فایل / Extract File
+### گام 1: دریافت و استخراج فایل / Download & Extract
 ```bash
+# ابتدا ZIP را از اندپوینت دانلود کنید یا خودتان بسازید
+wget http://localhost:8000/download_zip.php -O CMMS-Mine-Maintenance-System.zip
+
 unzip CMMS-Mine-Maintenance-System.zip
 cd CMMS-Mine-Maintenance-System
 ```

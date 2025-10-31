@@ -1,406 +1,229 @@
 # سامانه مدیریت تعمیرات معدن (CMMS)
-# Mine Maintenance Management System
 
-یک سیستم کامل مدیریت تعمیرات و نگهداری با پشتیبانی کامل از زبان فارسی، تاریخ شمسی و رابط کاربری راست‌به‌چپ.
+یک پروژه‌ی کامل Backend + Frontend برای مدیریت تعمیرات تجهیزات معدن با رابط کاربری فارسی، راست‌به‌چپ و پشتیبانی کامل از تاریخ جلالی.
 
-A complete Computerized Maintenance Management System (CMMS) with full Persian/Farsi support, Jalali calendar, and RTL UI.
+## ✨ امکانات کلیدی
+- احراز هویت مبتنی بر توکن (Bearer) با انقضای ۲۴ ساعته و مدیریت نقش‌های `admin`، `user`، `viewer`.
+- مدیریت کاربران (CRUD) ویژه مدیر سیستم.
+- فرم‌های «درخواست خروج»، «تعمیر بیرونی» و «تأیید ورود» با محدودیت ۱ تا ۵ قلم در هر درخواست و ثبت فایل‌های قبل/بعد.
+- ثبت تاریخچه‌ی تغییر وضعیت هر قلم در جدول جداگانه به‌همراه زمان ISO و شمسی.
+- تایم‌لاین گرافیکی با انیمیشن (Framer Motion) و نمایش آخرین رخدادها (Newest First).
+- انتخابگر تاریخ شمسی (`react-datepicker2` + `moment-jalaali`) با اعداد فارسی.
+- آپلود چندگانه‌ی تصاویر/اسناد برای هر قلم از طریق API اختصاصی.
+- داشبورد واکنش‌گرا با رنگ‌های صنعتی (تیره + طلایی) و پشتیبانی از حالت روشن/تاریک.
+- جستجو و افزودن سریع واحدها، کارگاه‌ها و تجهیزات (Inventory) در لحظه.
+- گزارش‌گیری با فیلتر بازه زمانی و نمودار Chart.js از تعداد درخواست‌ها بر اساس وضعیت.
+- خروجی PDF برای هر درخواست همراه با QR Code.
+- API پشتیبان‌گیری/بازیابی از فایل `database.sqlite` ویژه مدیر.
+- تولید QR برای هر درخواست و نمایش در جزئیات و فایل PDF.
+- اسکریپت تست سریع `backend/test_smoke.php` جهت اطمینان از آماده بودن احراز هویت و سرویس‌ها.
+- پوشه‌ی `backend/uploads` برای نگه‌داری فایل‌های بارگذاری شده.
 
----
-
-## 📋 فهرست مطالب / Table of Contents
-
-- [ویژگی‌ها / Features](#features)
-- [پیش‌نیازها / Prerequisites](#prerequisites)
-- [نصب و راه‌اندازی / Installation](#installation)
-- [راهنمای استفاده / Usage Guide](#usage)
-- [ساختار پروژه / Project Structure](#structure)
-- [API Documentation](#api)
-
----
-
-## ✨ ویژگی‌ها / Features <a name="features"></a>
-
-### فارسی:
-- ✅ رابط کاربری کاملاً فارسی و راست‌به‌چپ (RTL)
-- ✅ انتخابگر تاریخ شمسی گرافیکی با اعداد فارسی
-- ✅ سیستم احراز هویت با توکن Bearer (انقضای ۲۴ ساعته)
-- ✅ چهار نقش کاربری: مدیر، انباردار، واحد، کارگاه
-- ✅ فرم‌های خروج (۱-۵ آیتم)، تعمیر، و تأیید ورود (۱-۱۱ آیتم)
-- ✅ شماره‌گذاری یکتای فرم‌ها
-- ✅ جستجو و ارجاع بین فرم‌ها
-- ✅ نمایش وضعیت‌ها با رنگ‌بندی (آبی/نارنجی/سبز/بنفش)
-- ✅ آپلود فایل و تصویر
-- ✅ کنترل دسترسی بر اساس نقش و واحد
-- ✅ اعتبارسنجی کامل در سمت سرور و کلاینت
-
-### English:
-- ✅ Fully Persian/Farsi UI with RTL support
-- ✅ Graphical Jalali (Persian) date picker with Persian numerals
-- ✅ Bearer token authentication (24-hour expiration)
-- ✅ Four user roles: Manager, Storekeeper, Unit, Workshop
-- ✅ Exit forms (1-5 items), Repair forms, Entry confirmations (1-11 items)
-- ✅ Unique form numbering system
-- ✅ Search and cross-reference between forms
-- ✅ Color-coded status display (Blue/Orange/Green/Purple)
-- ✅ File and image upload capability
-- ✅ Role and unit-based access control
-- ✅ Complete server-side and client-side validation
-
----
-
-## 🔧 پیش‌نیازها / Prerequisites <a name="prerequisites"></a>
-
-### Windows:
-```bash
-# PHP 8.0 or higher
-# Download from: https://windows.php.net/download/
-
-# Node.js 16+ and npm
-# Download from: https://nodejs.org/
-
-# Check versions:
-php -v
-node -v
-npm -v
+## 📁 ساختار پروژه
+```
+.
+├── backend/
+│   ├── api/
+│   │   ├── auth.php
+│   │   ├── users.php
+│   │   ├── units.php
+│   │   ├── workshops.php
+│   │   ├── inventory.php
+│   │   ├── requests.php
+│   │   ├── history.php
+│   │   ├── upload.php
+│   │   └── backup.php
+│   ├── db.php
+│   ├── init_db.php
+│   ├── test_smoke.php
+│   ├── uploads/
+│   │   └── .gitkeep
+│   └── database.sqlite (ایجاد پس از اجرای init)
+├── frontend/
+│   ├── package.json
+│   ├── tailwind.config.js
+│   ├── postcss.config.js
+│   ├── public/
+│   │   └── index.html
+│   └── src/
+│       ├── index.jsx
+│       ├── index.css
+│       ├── App.jsx
+│       ├── hooks/useApi.js
+│       └── components/
+│           ├── Login.jsx
+│           ├── Dashboard.jsx
+│           ├── ShamsiDatePicker.jsx
+│           ├── TimelineModal.jsx
+│           ├── QRView.jsx
+│           ├── Reports.jsx
+│           ├── BackupPanel.jsx
+│           └── Toast.jsx
+├── start-backend.sh / .bat
+├── start-frontend.sh / .bat
+└── mine-repair-project.zip (پس از ساخت دستی)
 ```
 
-### Linux:
+## 🔐 اطلاعات ورود پیش‌فرض
+| نقش | نام کاربری | رمز عبور |
+| --- | --- | --- |
+| مدیر (`admin`) | `admin` | `admin123` |
+
+> **حتماً پس از اولین ورود رمز عبور را تغییر دهید.**
+
+## 🧰 پیش‌نیازها
+- **PHP 8.0+** با افزونه‌ی `pdo_sqlite`
+- **SQLite3**
+- **Node.js 16+** و `npm`
+
+### نصب پیش‌نیازها (Linux مثال Ubuntu/Debian)
 ```bash
-# Ubuntu/Debian
 sudo apt update
-sudo apt install php8.1 php8.1-sqlite3 php8.1-mbstring
+sudo apt install php php-sqlite3 php-mbstring unzip
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt install nodejs
-
-# Check versions:
-php -v
-node -v
-npm -v
 ```
 
----
+### نصب پیش‌نیازها (Windows)
+1. نصب XAMPP یا PHP مستقل (نسخه 8 به بالا).
+2. فعال بودن افزونه‌ی `php_sqlite3` در php.ini.
+3. نصب Node.js (https://nodejs.org).
 
-## 🚀 نصب و راه‌اندازی / Installation & Setup <a name="installation"></a>
-
-### مرحله ۱: آماده‌سازی دیتابیس / Step 1: Initialize Database
-
+## 🚀 راه‌اندازی سریع
+### 1) راه‌اندازی Backend
+#### Linux / macOS
 ```bash
-# Navigate to backend directory
-cd backend
-
-# Run database initialization (creates cmms.db)
-php init_db.php
+./start-backend.sh
 ```
-
-**خروجی موردانتظار / Expected output:**
+#### Windows
+```bat
+start-backend.bat
 ```
-Creating database schema...
-✓ Created users table
-✓ Created tokens table
-...
-✅ Database initialized successfully!
+این اسکریپت در صورت عدم وجود `database.sqlite` آن را می‌سازد و سپس سرور PHP را روی `http://localhost:8000` اجرا می‌کند.
 
-Default credentials:
-  Username: admin
-  Password: admin123
-  Role: manager
-```
-
-### مرحله ۲: راه‌اندازی Backend / Step 2: Start Backend Server
-
+### 2) راه‌اندازی Frontend
+#### Linux / macOS
 ```bash
-# در دایرکتوری backend / In backend directory
-php -S localhost:8000
+./start-frontend.sh
 ```
-
-**سرور در آدرس زیر در دسترس است:**
+#### Windows
+```bat
+start-frontend.bat
 ```
-http://localhost:8000
-```
+اولین اجرا، وابستگی‌ها را نصب کرده و سپس React Dev Server را روی `http://localhost:3000` اجرا می‌کند.
 
-### مرحله ۳: نصب وابستگی‌های Frontend / Step 3: Install Frontend Dependencies
+## 📡 نقاط پایانی (Backend)
+| Endpoint | Method | توضیح |
+| --- | --- | --- |
+| `/backend/api/auth.php` | POST | ورود و دریافت توکن |
+| `/backend/api/auth.php` | GET | دریافت اطلاعات کاربر جاری |
+| `/backend/api/auth.php` | DELETE | خروج و حذف توکن |
+| `/backend/api/users.php` | GET/POST/PUT/DELETE | مدیریت کاربران (مدیر) |
+| `/backend/api/units.php` | GET/POST | مدیریت واحدها |
+| `/backend/api/workshops.php` | GET/POST | مدیریت کارگاه‌ها |
+| `/backend/api/inventory.php` | GET/POST | مدیریت تجهیزات |
+| `/backend/api/requests.php` | GET/POST/PUT | ثبت و به‌روزرسانی درخواست‌ها |
+| `/backend/api/history.php` | GET | تاریخچه‌ی یک درخواست یا قلم |
+| `/backend/api/upload.php` | POST | بارگذاری فایل برای اقلام |
+| `/backend/api/backup.php` | GET/POST | دانلود یا بازیابی پایگاه‌داده (مدیر) |
 
+## 🧪 نمونه دستورات cURL
+> پیش‌فرض: سرور backend روی `http://localhost:8000` اجرا شده است.
+
+### دریافت توکن
 ```bash
-# باز کردن ترمینال جدید / Open a new terminal
-cd frontend
-
-# نصب وابستگی‌ها / Install dependencies
-npm install
+TOKEN=$(curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}' \
+  http://localhost:8000/backend/api/auth.php | jq -r '.token')
 ```
 
-### مرحله ۴: راه‌اندازی Frontend / Step 4: Start Frontend
-
+### ایجاد واحد و کارگاه جدید
 ```bash
-# در دایرکتوری frontend / In frontend directory
-npm start
+curl -s -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"واحد حفاری"}' \
+  http://localhost:8000/backend/api/units.php
+
+curl -s -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"کارگاه مرکزی"}' \
+  http://localhost:8000/backend/api/workshops.php
 ```
 
-**برنامه در آدرس زیر باز می‌شود:**
-```
-http://localhost:3000
-```
-
----
-
-## 📖 راهنمای استفاده / Usage Guide <a name="usage"></a>
-
-### حساب‌های کاربری پیش‌فرض / Default User Accounts
-
-| نقش / Role | نام کاربری / Username | رمز عبور / Password | دسترسی / Access |
-|-----------|----------------------|-------------------|-----------------|
-| مدیر / Manager | admin | admin123 | دسترسی کامل / Full access |
-| انباردار / Storekeeper | storekeeper1 | pass123 | ثبت/مشاهده فرم‌ها / Create/view forms |
-| واحد / Unit | unit1 | pass123 | فرم‌های واحد خود / Own unit forms only |
-| کارگاه / Workshop | workshop1 | pass123 | ارجاعات تعمیر / Repair assignments |
-
-### جریان کاری / Workflow
-
-#### 1️⃣ ثبت فرم خروج / Exit Form Submission
-1. وارد بخش "خروج/تعمیر" شوید / Navigate to "Exit/Repair"
-2. فرم خروج را تکمیل کنید (شماره، تاریخ، اقلام ۱-۵) / Fill exit form (number, date, items 1-5)
-3. "ذخیره و ادامه به فرم تعمیر" را بزنید / Click "Save and Continue to Repair Form"
-
-#### 2️⃣ ثبت فرم تعمیر / Repair Form Submission
-1. فرم تعمیر به‌طور خودکار با ارجاع به فرم خروج نمایش داده می‌شود
-2. شرح مشکل و اقلام (اختیاری) را تکمیل کنید / Fill description and optional items
-3. "ذخیره فرم تعمیر" را بزنید / Click "Save Repair Form"
-
-#### 3️⃣ تأیید ورود / Entry Confirmation
-1. وارد بخش "تأیید ورود" شوید / Navigate to "Entry Confirmation"
-2. شماره فرم خروج/تعمیر را جستجو کنید / Search for exit/repair form number
-3. فرم مناسب را انتخاب کنید / Select appropriate form
-4. اطلاعات تأیید ورود و اقلام (۱-۱۱) را تکمیل کنید / Fill confirmation details and items (1-11)
-5. "ذخیره تأیید ورود" را بزنید / Click "Save Entry Confirmation"
-
-#### 4️⃣ مشاهده وضعیت‌ها / View Statuses
-1. وارد بخش "وضعیت‌ها" شوید / Navigate to "Statuses"
-2. فیلتر بر اساس نوع یا وضعیت / Filter by type or status
-3. مشاهده تجمیعی تمام فرم‌ها با رنگ‌بندی / View all forms with color coding
-
-### راهنمای رنگ‌های وضعیت / Status Color Guide
-
-| وضعیت / Status | رنگ / Color | توضیح / Description |
-|---------------|-------------|-------------------|
-| در حال ارسال | 🔵 آبی / Blue | ارسال شده برای تعمیر / Sent for repair |
-| در حال تعمیر | 🟠 نارنجی / Orange | در حال تعمیر / Under repair |
-| تعمیر شده | 🟢 سبز / Green | تعمیر تکمیل شده / Repair completed |
-| تحویل به معدن | 🟣 بنفش / Purple | تحویل داده شده / Delivered to mine |
-
----
-
-## 📁 ساختار پروژه / Project Structure <a name="structure"></a>
-
-```
-/workspace/
-├── backend/
-│   ├── init_db.php          # Database initialization script
-│   ├── api.php              # Main API endpoint handler
-│   ├── upload.php           # File upload handler
-│   └── cmms.db             # SQLite database (created after init)
-│
-├── frontend/
-│   ├── public/
-│   │   └── index.html      # HTML template with RTL
-│   ├── src/
-│   │   ├── api.js          # API client with axios
-│   │   ├── utils.js        # Utility functions (Persian numbers, etc.)
-│   │   ├── AuthContext.js  # Authentication context
-│   │   ├── App.js          # Main app with routing
-│   │   ├── index.js        # React entry point
-│   │   ├── index.css       # TailwindCSS + custom styles
-│   │   ├── components/
-│   │   │   ├── Login.js    # Login component
-│   │   │   └── Layout.js   # Main layout with navigation
-│   │   └── pages/
-│   │       ├── Dashboard.js         # Dashboard page
-│   │       ├── ExitRepairForm.js    # Exit/Repair forms
-│   │       ├── EntryConfirmForm.js  # Entry confirmation
-│   │       └── StatusesView.js      # Status overview
-│   ├── package.json
-│   └── tailwind.config.js
-│
-├── uploads/                # Uploaded files directory
-└── README.md              # This file
-```
-
----
-
-## 🔌 API Documentation <a name="api"></a>
-
-### Base URL
-```
-http://localhost:8000/api.php
-```
-
-### Authentication
-All protected endpoints require Bearer token:
-```
-Authorization: Bearer {token}
-```
-
-### Endpoints
-
-#### 🔓 Public Endpoints
-
-**POST /api.php?action=login**
-```json
-Request:
-{
-  "username": "admin",
-  "password": "admin123"
-}
-
-Response:
-{
-  "token": "abc123...",
-  "user": {
-    "id": 1,
-    "username": "admin",
-    "role": "manager",
-    "unit_id": null
-  }
-}
-```
-
-#### 🔒 Protected Endpoints
-
-**GET /api.php?action=me**
-- Returns current user information
-
-**POST /api.php?action=create_exit_form**
-```json
-{
-  "form_no": "EXIT123",
-  "date_shamsi": "1402/08/15",
-  "out_type": "تعمیر",
-  "driver_name": "علی احمدی",
-  "reason": "خرابی موتور",
-  "unit_id": 1,
-  "items": [
-    {
-      "description": "موتور برقی",
-      "code": "M-001",
-      "quantity": 1,
-      "unit": "عدد"
-    }
-  ]
-}
-```
-
-**POST /api.php?action=create_repair_form**
-```json
-{
-  "form_no": "REPAIR123",
-  "date_shamsi": "1402/08/16",
-  "description": "تعویض سیم‌پیچ موتور",
-  "reference_exit_form_no": "EXIT123",
-  "unit_id": 1,
-  "items": []
-}
-```
-
-**POST /api.php?action=create_entry_confirm**
-```json
-{
-  "confirm_no": "ENTRY123",
-  "purchase_date_shamsi": "1402/08/20",
-  "purchase_center": "کارگاه مرکزی",
-  "reference_exit_form_no": "EXIT123",
-  "reference_repair_form_no": "REPAIR123",
-  "items": [
-    {
-      "description": "موتور برقی تعمیر شده",
-      "code": "M-001",
-      "quantity": 1,
-      "unit": "عدد"
-    }
-  ]
-}
-```
-
-**GET /api.php?action=search_forms&q={query}**
-- Search forms by number
-
-**GET /api.php?action=recent_forms&limit={limit}**
-- Get recent forms
-
-**GET /api.php?action=all_statuses**
-- Get all forms with status
-
-**POST /upload.php**
-- Upload files (multipart/form-data)
-- Fields: `file`, `entity_type`, `entity_id`
-
----
-
-## 🛠️ عیب‌یابی / Troubleshooting
-
-### مشکل: دیتابیس ایجاد نشد
-**راه‌حل:** مطمئن شوید PHP-SQLite نصب است
+### ثبت درخواست خروج با بارگذاری تصویر
 ```bash
-# Linux
-sudo apt install php-sqlite3
+REQUEST_PAYLOAD='{
+  "type":"exit",
+  "request_number":"EX-1001",
+  "requester_unit_id":1,
+  "workshop_id":1,
+  "date_shamsi":"1402/12/20",
+  "description":"نیاز به تعمیر فوری",
+  "items":[{
+    "name":"پمپ هیدرولیک",
+    "serial":"P-7788",
+    "status":"ارسال به تعمیرگاه",
+    "quantity":1,
+    "unit":"عدد",
+    "note":"نشت روغن" 
+  }]
+}'
 
-# Check
-php -m | grep sqlite
+REQUEST_ID=$(curl -s -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$REQUEST_PAYLOAD" \
+  http://localhost:8000/backend/api/requests.php | jq -r '.request_id')
+
+curl -s -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "request_id=$REQUEST_ID" \
+  -F "item_index=0" \
+  -F "type=before" \
+  -F "file=@sample-before.jpg" \
+  http://localhost:8000/backend/api/upload.php
 ```
 
-### مشکل: خطای CORS
-**راه‌حل:** مطمئن شوید backend روی پورت 8000 و frontend روی 3000 اجرا می‌شود
-
-### مشکل: تاریخ شمسی نمایش داده نمی‌شود
-**راه‌حل:** مطمئن شوید `react-multi-date-picker` نصب شده است
+### به‌روزرسانی وضعیت قلم و بررسی تاریخچه
 ```bash
-cd frontend
-npm install react-multi-date-picker
+curl -s -X PUT \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"id":'$REQUEST_ID',"items":[{"name":"پمپ هیدرولیک","serial":"P-7788","status":"در حال تعمیر","quantity":1,"unit":"عدد"}],"note":"قطعه به کارگاه مرکزی رسید"}' \
+  http://localhost:8000/backend/api/requests.php
+
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/backend/api/history.php?request_id=$REQUEST_ID"
 ```
 
-### مشکل: فونت فارسی نمایش داده نمی‌شود
-**راه‌حل:** فونت Vazirmatn از CDN بارگذاری می‌شود، اتصال اینترنت را بررسی کنید
+### دانلود نسخه پشتیبان دیتابیس
+```bash
+curl -H "Authorization: Bearer $TOKEN" -o database-backup.sqlite http://localhost:8000/backend/api/backup.php
+```
 
----
+## 🧪 تست خودکار
+```bash
+php backend/test_smoke.php http://localhost:8000/backend/api
+```
+این اسکریپت ورود مدیر و دریافت فهرست واحدها را بررسی می‌کند.
 
-## 📝 نکات مهم / Important Notes
+## 🗂 ساخت بسته‌ی ZIP تحویل
+برای تولید فایل `mine-repair-project.zip` که شامل کل پروژه باشد، در ریشه‌ی مخزن اجرا کنید:
+```bash
+zip -r mine-repair-project.zip backend frontend README.md start-backend.* start-frontend.*
+```
+(برای Windows می‌توانید از ابزار فشرده‌سازی گرافیکی استفاده کنید.)
 
-### فارسی:
-- ⚠️ هیچ‌گاه فایل `cmms.db` را به‌طور دستی ویرایش نکنید
-- ⚠️ برای محیط production، حتماً رمزهای پیش‌فرض را تغییر دهید
-- ⚠️ فایل‌های آپلود شده در پوشه `uploads/` ذخیره می‌شوند
-- ⚠️ توکن‌های منقضی شده به‌طور خودکار از دیتابیس پاک نمی‌شوند (نیاز به cron job)
-
-### English:
-- ⚠️ Never manually edit the `cmms.db` file
-- ⚠️ Change default passwords for production environments
-- ⚠️ Uploaded files are stored in `uploads/` directory
-- ⚠️ Expired tokens are not automatically cleaned (requires cron job)
-
----
-
-## 📞 پشتیبانی / Support
-
-برای گزارش مشکلات یا پیشنهادات، لطفاً یک Issue در GitHub ایجاد کنید.
-
-For issues or suggestions, please create a GitHub Issue.
-
----
-
-## 📄 مجوز / License
-
-این پروژه تحت مجوز MIT منتشر شده است.
-
-This project is licensed under the MIT License.
-
----
-
-## 🎉 تشکر / Acknowledgments
-
-- React Team برای فریمورک عالی
-- TailwindCSS برای استایل‌دهی راحت
-- react-multi-date-picker برای تاریخ شمسی
-- Vazirmatn Font برای فونت زیبای فارسی
-
----
-
-**ساخته شده با ❤️ برای مدیریت بهتر تعمیرات معدن**
-
-**Built with ❤️ for better mine maintenance management**
+## ✅ چک‌لیست تحویل
+- [x] احراز هویت و نقش‌ها
+- [x] ثبت و تاریخچه‌ی اقلام (History Timeline)
+- [x] تایم‌لاین با انیمیشن
+- [x] انتخابگر تاریخ شمسی
+- [x] آپلود فایل‌ها
+- [x] پشتیبان‌گیری و بازیابی دیتابیس
+- [x] QR Code در جزئیات و PDF
+- [x] گزارش‌ها (نمودار + خروجی PDF)
+- [x] README کامل با دستورالعمل اجرا

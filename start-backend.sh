@@ -5,11 +5,9 @@ echo "🚀 Starting CMMS Backend Server..."
 echo ""
 
 # Check if database exists
-if [ ! -f "backend/cmms.db" ]; then
+if [ ! -f "backend/database.sqlite" ]; then
     echo "⚠️  Database not found. Initializing..."
-    cd backend
-    php init_db.php
-    cd ..
+    php backend/init_db.php
     echo ""
 fi
 
@@ -17,5 +15,4 @@ fi
 echo "Starting PHP server on http://localhost:8000"
 echo "Press Ctrl+C to stop"
 echo ""
-cd backend
-php -S localhost:8000
+php -S localhost:8000 -t backend

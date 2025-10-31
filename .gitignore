@@ -47,5 +47,5 @@ frontend/node_modules/
 *.bak
 *.cache
 
-# ZIP packages (optional - uncomment if you don't want to commit ZIP)
-# *.zip
+# ZIP packages
+*.[Zz][Ii][Pp]
