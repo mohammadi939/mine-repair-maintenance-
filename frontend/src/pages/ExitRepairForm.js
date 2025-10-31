@@ -2,9 +2,17 @@ import React, { useState, useEffect } from 'react';
 import DatePicker from 'react-multi-date-picker';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
-import { createExitForm, createRepairForm, getUnits, getRecentForms } from '../api';
+import { createExitForm, createRepairForm, getUnits, getRecentForms, uploadFile } from '../api';
 import { useAuth } from '../AuthContext';
-import { toPersianNumber, formatJalaliDate, generateFormNumber, validateItemsCount, validateItem } from '../utils';
+import {
+  toPersianNumber,
+  formatJalaliDate,
+  generateFormNumber,
+  validateItemsCount,
+  validateItem,
+  toEnglishNumber,
+  getStatusClass,
+} from '../utils';
 
 const ExitRepairForm = () => {
   const { user } = useAuth();
@@ -13,6 +21,10 @@ const ExitRepairForm = () => {
   const [lastExitFormNo, setLastExitFormNo] = useState('');
   const [recentForms, setRecentForms] = useState([]);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [exitUploads, setExitUploads] = useState({ formScan: null, equipmentImage: null });
+  const [repairUploads, setRepairUploads] = useState({ formScan: null, equipmentImage: null });
+  const [exitFileKey, setExitFileKey] = useState(0);
+  const [repairFileKey, setRepairFileKey] = useState(0);
 
   // Exit form state
   const [exitForm, setExitForm] = useState({
@@ -35,17 +47,74 @@ const ExitRepairForm = () => {
     items: [],
   });
 
+  const getMessageClasses = (type) => {
+    switch (type) {
+      case 'success':
+        return 'bg-green-50 border border-green-200 text-green-800';
+      case 'warning':
+        return 'bg-yellow-50 border border-yellow-200 text-yellow-800';
+      default:
+        return 'bg-red-50 border border-red-200 text-red-800';
+    }
+  };
+
+  const handleFileChange = (setter, field) => (event) => {
+    const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+    setter((prev) => ({ ...prev, [field]: file }));
+  };
+
+  const resetExitAttachments = () => {
+    setExitUploads({ formScan: null, equipmentImage: null });
+    setExitFileKey((prev) => prev + 1);
+  };
+
+  const resetRepairAttachments = () => {
+    setRepairUploads({ formScan: null, equipmentImage: null });
+    setRepairFileKey((prev) => prev + 1);
+  };
+
+  const uploadAttachments = async (entityType, entityId, files) => {
+    const selectedFiles = Object.values(files).filter(Boolean);
+    if (selectedFiles.length === 0) {
+      return { success: true };
+    }
+
+    try {
+      for (const file of selectedFiles) {
+        await uploadFile(entityType, entityId, file);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('Attachment upload error:', error);
+      return { success: false };
+    }
+  };
+
   useEffect(() => {
     loadUnits();
     loadRecentForms();
   }, []);
 
+  useEffect(() => {
+    if (user?.role === 'unit' && user.unit_id) {
+      setExitForm((prev) => ({ ...prev, unit_id: user.unit_id }));
+      setRepairForm((prev) => ({ ...prev, unit_id: user.unit_id }));
+    }
+  }, [user]);
+
   const loadUnits = async () => {
     try {
       const data = await getUnits();
       setUnits(data);
-      if (data.length > 0 && !exitForm.unit_id) {
-        setExitForm((prev) => ({ ...prev, unit_id: data[0].id }));
+      const defaultUnitId =
+        user?.role === 'unit' && user.unit_id ? user.unit_id : data[0]?.id || '';
+
+      if (!exitForm.unit_id && defaultUnitId) {
+        setExitForm((prev) => ({ ...prev, unit_id: defaultUnitId }));
+      }
+
+      if (!repairForm.unit_id && defaultUnitId) {
+        setRepairForm((prev) => ({ ...prev, unit_id: defaultUnitId }));
       }
     } catch (err) {
       console.error('Error loading units:', err);
@@ -63,7 +132,11 @@ const ExitRepairForm = () => {
 
   // Exit form handlers
   const handleExitFormChange = (field, value) => {
-    setExitForm((prev) => ({ ...prev, [field]: value }));
+    let processedValue = value;
+    if (field === 'form_no') {
+      processedValue = toEnglishNumber(value);
+    }
+    setExitForm((prev) => ({ ...prev, [field]: processedValue }));
   };
 
   const handleExitItemChange = (index, field, value) => {
@@ -119,7 +192,13 @@ const ExitRepairForm = () => {
       };
 
       const response = await createExitForm(data);
-      setMessage({ type: 'success', text: 'فرم خروج با موفقیت ثبت شد' });
+      const attachmentsResult = await uploadAttachments('exit_form', response.id, exitUploads);
+      setMessage({
+        type: attachmentsResult.success ? 'success' : 'warning',
+        text: attachmentsResult.success
+          ? 'فرم خروج با موفقیت ثبت شد'
+          : 'فرم خروج ثبت شد اما آپلود فایل با خطا مواجه شد',
+      });
       setLastExitFormNo(response.form_no);
       setShowRepairForm(true);
       setRepairForm((prev) => ({
@@ -127,6 +206,7 @@ const ExitRepairForm = () => {
         reference_exit_form_no: response.form_no,
         unit_id: exitForm.unit_id,
       }));
+      resetExitAttachments();
       loadRecentForms();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'خطا در ثبت فرم خروج' });
@@ -135,7 +215,11 @@ const ExitRepairForm = () => {
 
   // Repair form handlers
   const handleRepairFormChange = (field, value) => {
-    setRepairForm((prev) => ({ ...prev, [field]: value }));
+    let processedValue = value;
+    if (field === 'form_no' || field === 'reference_exit_form_no') {
+      processedValue = toEnglishNumber(value);
+    }
+    setRepairForm((prev) => ({ ...prev, [field]: processedValue }));
   };
 
   const handleRepairItemChange = (index, field, value) => {
@@ -182,9 +266,18 @@ const ExitRepairForm = () => {
         date_shamsi: formatJalaliDate(repairForm.date_shamsi),
       };
 
-      await createRepairForm(data);
-      setMessage({ type: 'success', text: 'فرم تعمیر با موفقیت ثبت شد' });
-      
+      const response = await createRepairForm(data);
+      const attachmentsResult = await uploadAttachments('repair_form', response.id, repairUploads);
+      setMessage({
+        type: attachmentsResult.success ? 'success' : 'warning',
+        text: attachmentsResult.success
+          ? 'فرم تعمیر با موفقیت ثبت شد'
+          : 'فرم تعمیر ثبت شد اما آپلود فایل با خطا مواجه شد',
+      });
+
+      const defaultUnitId =
+        user?.role === 'unit' && user.unit_id ? user.unit_id : units[0]?.id || '';
+
       // Reset forms
       setExitForm({
         form_no: generateFormNumber('EXIT'),
@@ -192,7 +285,7 @@ const ExitRepairForm = () => {
         out_type: '',
         driver_name: '',
         reason: '',
-        unit_id: units[0]?.id || '',
+        unit_id: defaultUnitId,
         items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
       });
       setRepairForm({
@@ -200,9 +293,10 @@ const ExitRepairForm = () => {
         date_shamsi: null,
         description: '',
         reference_exit_form_no: '',
-        unit_id: '',
+        unit_id: defaultUnitId,
         items: [],
       });
+      resetRepairAttachments();
       setShowRepairForm(false);
       loadRecentForms();
     } catch (err) {
@@ -218,13 +312,7 @@ const ExitRepairForm = () => {
         <h2 className="text-2xl font-bold text-gray-900 mb-6">ثبت فرم خروج و تعمیر</h2>
 
         {message.text && (
-          <div
-            className={`mb-6 p-4 rounded-lg ${
-              message.type === 'success'
-                ? 'bg-green-50 border border-green-200 text-green-800'
-                : 'bg-red-50 border border-red-200 text-red-800'
-            }`}
-          >
+          <div className={`mb-6 p-4 rounded-lg ${getMessageClasses(message.type)}`}>
             {message.text}
           </div>
         )}
@@ -266,7 +354,10 @@ const ExitRepairForm = () => {
                 <select
                   value={exitForm.unit_id}
                   onChange={(e) => handleExitFormChange('unit_id', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  disabled={user?.role === 'unit'}
+                  className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                    user?.role === 'unit' ? 'bg-gray-100 cursor-not-allowed text-gray-600' : ''
+                  }`}
                 >
                   {units.map((unit) => (
                     <option key={unit.id} value={unit.id}>
@@ -304,6 +395,31 @@ const ExitRepairForm = () => {
                   onChange={(e) => handleExitFormChange('reason', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">اسکن فرم خروج</label>
+                <input
+                  key={`exit-form-${exitFileKey}`}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={handleFileChange(setExitUploads, 'formScan')}
+                  className="w-full text-sm text-gray-700"
+                />
+                <p className="text-xs text-gray-500 mt-1">فرمت‌های مجاز: JPG، PNG، PDF (حداکثر ۵ مگابایت)</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">تصویر تجهیز قبل از ارسال</label>
+                <input
+                  key={`exit-equipment-${exitFileKey}`}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange(setExitUploads, 'equipmentImage')}
+                  className="w-full text-sm text-gray-700"
+                />
+                <p className="text-xs text-gray-500 mt-1">تصویر تجهیز پیش از خروج از معدن را بارگذاری کنید.</p>
               </div>
             </div>
 
@@ -475,6 +591,31 @@ const ExitRepairForm = () => {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">اسکن فرم تعمیر</label>
+                <input
+                  key={`repair-form-${repairFileKey}`}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={handleFileChange(setRepairUploads, 'formScan')}
+                  className="w-full text-sm text-gray-700"
+                />
+                <p className="text-xs text-gray-500 mt-1">فرمت‌های مجاز: JPG، PNG، PDF (حداکثر ۵ مگابایت)</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">تصویر تجهیز در کارگاه</label>
+                <input
+                  key={`repair-equipment-${repairFileKey}`}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange(setRepairUploads, 'equipmentImage')}
+                  className="w-full text-sm text-gray-700"
+                />
+                <p className="text-xs text-gray-500 mt-1">وضعیت تجهیز در کارگاه را مستندسازی کنید.</p>
+              </div>
+            </div>
+
             {/* Optional items */}
             <div>
               <div className="flex justify-between items-center mb-4">
@@ -564,6 +705,8 @@ const ExitRepairForm = () => {
               <button
                 type="button"
                 onClick={() => {
+                  const defaultUnitId =
+                    user?.role === 'unit' && user.unit_id ? user.unit_id : units[0]?.id || '';
                   setShowRepairForm(false);
                   setExitForm({
                     form_no: generateFormNumber('EXIT'),
@@ -571,9 +714,19 @@ const ExitRepairForm = () => {
                     out_type: '',
                     driver_name: '',
                     reason: '',
-                    unit_id: units[0]?.id || '',
+                    unit_id: defaultUnitId,
                     items: [{ description: '', code: '', quantity: '', unit: 'عدد' }],
                   });
+                  setRepairForm({
+                    form_no: generateFormNumber('REPAIR'),
+                    date_shamsi: null,
+                    description: '',
+                    reference_exit_form_no: '',
+                    unit_id: defaultUnitId,
+                    items: [],
+                  });
+                  resetExitAttachments();
+                  resetRepairAttachments();
                 }}
                 className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
               >
@@ -613,8 +766,8 @@ const ExitRepairForm = () => {
                     <td className="px-6 py-4 text-sm text-gray-700">{toPersianNumber(form.number)}</td>
                     <td className="px-6 py-4 text-sm text-gray-700">{toPersianNumber(form.date_shamsi)}</td>
                     <td className="px-6 py-4">
-                      <span className={`status-badge ${form.status === 'در حال ارسال' ? 'status-sending' : 'status-repairing'}`}>
-                        {form.status}
+                      <span className={`status-badge ${getStatusClass(form.status)}`}>
+                        {form.status || 'نامعلوم'}
                       </span>
                     </td>
                   </tr>

@@ -118,6 +118,24 @@ php -S localhost:8000
 http://localhost:8000
 ```
 
+### مرحله ۲.۱: دریافت مستقیم فایل ZIP / Step 2.1: Direct ZIP Download
+
+پس از اجرای دستور بالا، می‌توانید بستهٔ کامل سیستم را به صورت لینک مستقیم دریافت کنید. این اندپوینت در لحظه یک فایل ZIP تازه تولید می‌کند تا نیازی به نگه‌داری فایل باینری در مخزن نباشد:
+
+```
+http://localhost:8000/download_zip.php
+```
+
+با باز کردن لینک در مرورگر یا استفاده از ابزارهایی مانند `wget` یا `curl`، فایل `CMMS-Mine-Maintenance-System.zip` در همان لحظه ساخته و دانلود می‌شود.
+
+```bash
+# نمونه (Linux/Mac)
+wget http://localhost:8000/download_zip.php -O CMMS-Mine-Maintenance-System.zip
+
+# نمونه (PowerShell)
+Invoke-WebRequest -Uri "http://localhost:8000/download_zip.php" -OutFile "CMMS-Mine-Maintenance-System.zip"
+```
+
 ### مرحله ۳: نصب وابستگی‌های Frontend / Step 3: Install Frontend Dependencies
 
 ```bash
@@ -159,18 +177,21 @@ http://localhost:3000
 1. وارد بخش "خروج/تعمیر" شوید / Navigate to "Exit/Repair"
 2. فرم خروج را تکمیل کنید (شماره، تاریخ، اقلام ۱-۵) / Fill exit form (number, date, items 1-5)
 3. "ذخیره و ادامه به فرم تعمیر" را بزنید / Click "Save and Continue to Repair Form"
+4. فایل‌های پیوست (اسکن فرم و تصویر تجهیز قبل از خروج) را بارگذاری کنید / Upload exit form scan and equipment photo
 
 #### 2️⃣ ثبت فرم تعمیر / Repair Form Submission
 1. فرم تعمیر به‌طور خودکار با ارجاع به فرم خروج نمایش داده می‌شود
 2. شرح مشکل و اقلام (اختیاری) را تکمیل کنید / Fill description and optional items
 3. "ذخیره فرم تعمیر" را بزنید / Click "Save Repair Form"
+4. فایل‌های پیوست (اسکن فرم تعمیر و تصویر تجهیز در کارگاه) را اضافه کنید / Attach repair form scan and workshop photo
 
 #### 3️⃣ تأیید ورود / Entry Confirmation
 1. وارد بخش "تأیید ورود" شوید / Navigate to "Entry Confirmation"
 2. شماره فرم خروج/تعمیر را جستجو کنید / Search for exit/repair form number
 3. فرم مناسب را انتخاب کنید / Select appropriate form
 4. اطلاعات تأیید ورود و اقلام (۱-۱۱) را تکمیل کنید / Fill confirmation details and items (1-11)
-5. "ذخیره تأیید ورود" را بزنید / Click "Save Entry Confirmation"
+5. فایل‌های پیوست (اسکن تأیید و تصویر تجهیز پس از تعمیر) را بارگذاری کنید / Upload confirmation scan and post-repair photo
+6. "ذخیره تأیید ورود" را بزنید / Click "Save Entry Confirmation"
 
 #### 4️⃣ مشاهده وضعیت‌ها / View Statuses
 1. وارد بخش "وضعیت‌ها" شوید / Navigate to "Statuses"

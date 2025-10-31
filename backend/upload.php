@@ -36,12 +36,62 @@ function getAuthToken() {
 
 function validateToken($db, $token) {
     $stmt = $db->prepare("
-        SELECT u.* FROM users u 
-        JOIN tokens t ON t.user_id = u.id 
+        SELECT u.* FROM users u
+        JOIN tokens t ON t.user_id = u.id
         WHERE t.token = ? AND t.expires_at > datetime('now')
     ");
     $stmt->execute([$token]);
     return $stmt->fetch();
+}
+
+function canAccessUnit($user, $unitId) {
+    if (in_array($user['role'], ['manager', 'storekeeper', 'workshop'])) {
+        return true;
+    }
+
+    if ($unitId === null) {
+        return false;
+    }
+
+    if ($user['role'] === 'unit' && $user['unit_id'] == $unitId) {
+        return true;
+    }
+
+    return false;
+}
+
+function resolveEntityUnitId($db, $entityType, $entityId) {
+    switch ($entityType) {
+        case 'exit_form':
+            $stmt = $db->prepare('SELECT unit_id FROM exit_forms WHERE id = ?');
+            break;
+        case 'repair_form':
+            $stmt = $db->prepare('SELECT unit_id FROM repair_forms WHERE id = ?');
+            break;
+        case 'entry_confirm':
+            $stmt = $db->prepare('
+                SELECT COALESCE(ef.unit_id, rf.unit_id) AS unit_id
+                FROM entry_confirms ec
+                LEFT JOIN exit_forms ef ON ec.reference_exit_form_id = ef.id
+                LEFT JOIN repair_forms rf ON ec.reference_repair_form_id = rf.id
+                WHERE ec.id = ?
+            ');
+            break;
+        case 'equipment':
+            $stmt = $db->prepare('SELECT unit_id FROM equipment WHERE id = ?');
+            break;
+        default:
+            return false;
+    }
+
+    $stmt->execute([$entityId]);
+    $row = $stmt->fetch();
+
+    if (!$row) {
+        return false;
+    }
+
+    return array_key_exists('unit_id', $row) ? $row['unit_id'] : null;
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -79,6 +129,21 @@ if (!$entityType || !$entityId) {
 $allowedTypes = ['exit_form', 'repair_form', 'entry_confirm', 'equipment'];
 if (!in_array($entityType, $allowedTypes)) {
     sendError('نوع موجودیت نامعتبر است');
+}
+
+if (!ctype_digit((string)$entityId)) {
+    sendError('شناسه موجودیت نامعتبر است');
+}
+
+$entityId = (int)$entityId;
+
+$entityUnitId = resolveEntityUnitId($db, $entityType, $entityId);
+if ($entityUnitId === false) {
+    sendError('موجودیت مورد نظر یافت نشد', 404);
+}
+
+if (!canAccessUnit($user, $entityUnitId)) {
+    sendError('دسترسی به این موجودیت ندارید', 403);
 }
 
 $file = $_FILES['file'];
