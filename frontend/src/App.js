@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import ExitRepairForm from './pages/ExitRepairForm';
 import EntryConfirmForm from './pages/EntryConfirmForm';
 import StatusesView from './pages/StatusesView';
+import LocalWorkflow from './pages/LocalWorkflow';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -81,6 +82,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <ExitRepairForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/local-workflow"
+            element={
+              <ProtectedRoute>
+                <LocalWorkflow />
               </ProtectedRoute>
             }
           />

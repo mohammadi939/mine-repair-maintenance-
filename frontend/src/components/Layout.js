@@ -43,6 +43,7 @@ const Layout = ({ children }) => {
       { path: '/exit-repair', label: 'گردش تعمیرات', icon: '🛠️' },
       { path: '/entry-confirm', label: 'تأیید ورود', icon: '📥' },
       { path: '/statuses', label: 'وضعیت و اعلان‌ها', icon: '📊' },
+      { path: '/local-workflow', label: 'حالت آفلاین', icon: '💾' },
     ],
     []
   );
